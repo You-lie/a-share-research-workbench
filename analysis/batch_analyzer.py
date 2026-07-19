@@ -514,10 +514,12 @@ class BatchAnalyzer:
         for r in results:
             d = r['data']
             score_bd = d.get('score_breakdown', {}) or {}
-            val_pct = d.get('valuation_percentile', 50) or 50
+            val_pct = d.get('valuation_percentile')
             final_score = score_bd.get('final', 0) or 0
-            # 低估值 + 高评分的组合最优
-            composite = final_score * 1.5 - (val_pct / 100) * 2
+            # Missing PE data must not be silently treated as a normal 50% percentile.
+            composite = final_score * 1.5
+            if val_pct is not None:
+                composite -= (val_pct / 100) * 2
             scored.append((composite, r))
 
         scored.sort(key=lambda x: x[0], reverse=True)

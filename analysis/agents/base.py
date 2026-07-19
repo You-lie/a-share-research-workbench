@@ -231,12 +231,15 @@ class BaseAgent:
         vp = state.get('valuation_percentile')
         vp_str = f"{vp:.1f}%" if vp is not None else "N/A"
         ft = state.get('financial_trends') or {}
+        reference_price = state.get('suggested_buy_price')
+        reference_text = f"{reference_price:.2f}" if isinstance(reference_price, (int, float)) and reference_price > 0 else "暂不适用"
+        valuation_note = state.get('valuation_note') or ""
 
         lines = [
             f"PE: {q.get('pe', '?')}  PB: {q.get('pb', '?')}  市值: {q.get('market_cap', '?')}亿",
             f"估值等级: {state.get('valuation_level', '?')} (PE分位: {vp_str})",
             f"历史PE均值: {state.get('historical_pe_avg') or 'N/A'}  "
-            f"建议买入价: {state.get('suggested_buy_price', '?')}",
+            f"估值参考价: {reference_text}",
             f"EPS: {fs.get('eps', '?')}  ROE: {fs.get('roe', '?')}%  "
             f"经营现金流: {fs.get('operating_cash_flow', 'N/A')}亿  "
             f"自由现金流: {fs.get('free_cash_flow', 'N/A')}亿",
@@ -245,6 +248,8 @@ class BaseAgent:
             f"股息率: {fs.get('dividend_yield') or q.get('dividend_yield', 'N/A')}%",
             f"营收同比: {fs.get('revenue_yoy', '?')}%  净利同比: {fs.get('net_profit_yoy', '?')}%",
         ]
+        if valuation_note:
+            lines.append(f"估值说明: {valuation_note}")
 
         # ROIC (投入资本回报率) — 巴菲特核心指标
         roic = state.get('roic')
@@ -308,6 +313,9 @@ class BaseAgent:
         fs = state.get('financial_summary', {}) or {}
         vp = state.get('valuation_percentile')
         vp_str = f"{vp:.1f}%" if vp is not None else "N/A"
+        reference_price = state.get('suggested_buy_price')
+        reference_text = f"{reference_price:.2f}" if isinstance(reference_price, (int, float)) and reference_price > 0 else "暂不适用"
+        valuation_note = state.get('valuation_note') or ""
         lines = [
             f"当前股价: {q.get('price', '?')}元",
             f"PE: {q.get('pe', '?')}  PB: {q.get('pb', '?')}  PS: {q.get('ps', 'N/A')}",
@@ -315,10 +323,12 @@ class BaseAgent:
             f"PE 历史分位: {vp_str} (近365日)",
             f"历史 PE 均值: {state.get('historical_pe_avg') or 'N/A'}",
             f"估值等级: {state.get('valuation_level', '正常')}",
-            f"建议买入价 (系统计算): {state.get('suggested_buy_price', '?')}",
+            f"估值参考价: {reference_text}",
             f"EPS: {fs.get('eps', '?')}  ROE: {fs.get('roe', '?')}%",
             f"股息率: {fs.get('dividend_yield') or q.get('dividend_yield', 'N/A')}%",
         ]
+        if valuation_note:
+            lines.append(f"估值说明: {valuation_note}")
 
         # 长期PE分位
         pe_5y = state.get('valuation_percentile_5y')

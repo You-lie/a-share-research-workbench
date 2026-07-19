@@ -49,25 +49,28 @@ class ValuationAgent(BaseAgent):
         return self._build_report(result)
 
     def _rule_analyze(self, state: dict) -> EmployeeReport:
-        pe_pct = state.get('valuation_percentile', 50) or 50
+        pe_pct = state.get('valuation_percentile')
         q = state.get('quote', {}) or {}
         pb = q.get('pb', 999)
 
         score = 0.0
         points, risks = [], []
 
-        if pe_pct < 10:
-            score += 3; points.append(f"PE处于历史{pe_pct:.0f}%分位，估值极低")
-        elif pe_pct < 30:
-            score += 2; points.append(f"PE处于历史{pe_pct:.0f}%分位，估值偏低")
-        elif pe_pct < 50:
-            score += 1; points.append(f"PE处于历史{pe_pct:.0f}%分位，估值合理偏低")
-        elif pe_pct < 70:
-            points.append(f"PE处于历史{pe_pct:.0f}%分位，估值正常")
-        elif pe_pct < 90:
-            score -= 1; points.append(f"PE处于历史{pe_pct:.0f}%分位，估值偏高"); risks.append("高估值回调风险")
+        if pe_pct is None:
+            points.append(state.get('valuation_note') or "PE估值数据不可用，未按PE分位评分")
         else:
-            score -= 3; points.append(f"PE处于历史{pe_pct:.0f}%分位，估值极高"); risks.append("估值泡沫风险")
+            if pe_pct < 10:
+                score += 3; points.append(f"PE处于历史{pe_pct:.0f}%分位，估值极低")
+            elif pe_pct < 30:
+                score += 2; points.append(f"PE处于历史{pe_pct:.0f}%分位，估值偏低")
+            elif pe_pct < 50:
+                score += 1; points.append(f"PE处于历史{pe_pct:.0f}%分位，估值合理偏低")
+            elif pe_pct < 70:
+                points.append(f"PE处于历史{pe_pct:.0f}%分位，估值正常")
+            elif pe_pct < 90:
+                score -= 1; points.append(f"PE处于历史{pe_pct:.0f}%分位，估值偏高"); risks.append("高估值回调风险")
+            else:
+                score -= 3; points.append(f"PE处于历史{pe_pct:.0f}%分位，估值极高"); risks.append("估值泡沫风险")
 
         # 长期PE分位 (5年)
         pe_5y = state.get('valuation_percentile_5y')

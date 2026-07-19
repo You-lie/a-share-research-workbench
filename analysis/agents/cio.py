@@ -93,8 +93,12 @@ class CIOAgent(BaseAgent):
             pnl_pct = (price - cost) / cost * 100
             lines.append(f"- 用户成本价: {cost} 元 (浮动盈亏: {pnl_pct:+.1f}%)")
 
+        reference_price = state.get('suggested_buy_price')
+        reference_text = f"{reference_price:.2f}" if isinstance(reference_price, (int, float)) and reference_price > 0 else "暂不适用"
         lines.append(f"- 估值等级: {state.get('valuation_level', 'N/A')}")
-        lines.append(f"- 系统建议买入价: {state.get('suggested_buy_price', 'N/A')}")
+        lines.append(f"- 估值参考价: {reference_text}")
+        if state.get('valuation_note'):
+            lines.append(f"- 估值说明: {state['valuation_note']}")
         # 评分引擎信号
         sb = state.get('score_breakdown') or {}
         if isinstance(sb, dict):

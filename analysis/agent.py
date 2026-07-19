@@ -5,7 +5,7 @@ StockEngine Agent
 1. 采集行情/技术指标/基本面
 2. 情感分析
 3. 信号生成
-4. 估值与买入价计算
+4. 估值参考计算
 5. LLM 综合预测
 """
 import os
@@ -379,39 +379,85 @@ class StockAnalysisAgent:
 
     # ---- 估值计算 ----
 
+    @staticmethod
+    def _mark_valuation_unavailable(state: AnalysisState, status: str, level: str, note: str) -> None:
+        """Do not invent a valuation reference when PE data cannot support one."""
+        state.valuation_status = status
+        state.valuation_level = level
+        state.valuation_note = note
+        state.valuation_percentile = None
+        state.historical_pe_avg = None
+        state.suggested_buy_price = None
+
     def _compute_valuation(self, symbol: str, state: AnalysisState):
-        """计算 PE 历史分位数、估值等级、建议买入价 + 长期PE分位"""
+        """仅在 PE 与历史样本有效时计算 PE 估值参考。"""
         try:
-            # 1年PE分位 (缓存)
+            quote = state.quote or {}
+            raw_pe = quote.get('pe') if isinstance(quote, dict) else None
+            raw_price = quote.get('price') if isinstance(quote, dict) else None
+
+            try:
+                current_pe = float(raw_pe)
+            except (TypeError, ValueError):
+                current_pe = None
+            try:
+                current_price = float(raw_price)
+            except (TypeError, ValueError):
+                current_price = None
+
+            if current_pe is None or not math.isfinite(current_pe) or current_pe <= 0:
+                if current_pe is not None and math.isfinite(current_pe) and current_pe < 0:
+                    pe_text = "动态PE为负，通常对应亏损期，不能按PE估值"
+                elif current_pe == 0:
+                    pe_text = "动态PE为零，不能按PE估值"
+                else:
+                    pe_text = "当前PE缺失或无效，不能按PE估值"
+                self._mark_valuation_unavailable(state, 'unavailable', 'PE不适用', pe_text)
+                return
+
+            if current_price is None or not math.isfinite(current_price) or current_price <= 0:
+                self._mark_valuation_unavailable(
+                    state, 'unavailable', '估值数据不足', '当前价格缺失或无效，未提供估值参考价'
+                )
+                return
+
+            # 1年PE分位 (缓存)。仅在当前 PE 可用后请求历史数据，避免无效请求。
             pe_values = cache_manager.get_historical_pe(
                 symbol, 365,
                 lambda: self.provider.get_historical_pe(symbol, days=365)
             )
-            quote = state.quote or {}
-            current_pe = quote.get('pe') if isinstance(quote, dict) else None
-            current_price = quote.get('price', 0) if isinstance(quote, dict) else 0
 
-            if not pe_values or not current_pe or current_pe <= 0:
-                state.valuation_level = '正常'
-                state.valuation_percentile = None
-                state.historical_pe_avg = None
-                state.suggested_buy_price = round(current_price * 0.95, 2) if current_price else 0
-                # 仍尝试长期PE
+            if not pe_values:
+                self._mark_valuation_unavailable(
+                    state, 'insufficient', '估值数据不足', '未取得足够的历史正PE数据，未提供估值参考价'
+                )
                 self._compute_long_term_pe(symbol, state, current_pe, current_price)
                 return
 
             import numpy as np
-            pe_array = np.array(pe_values, dtype=float)
-            pe_array = pe_array[pe_array > 0]
+            valid_pe_values = []
+            for value in pe_values:
+                try:
+                    value = float(value)
+                except (TypeError, ValueError):
+                    continue
+                if math.isfinite(value) and value > 0:
+                    valid_pe_values.append(value)
+            pe_array = np.array(valid_pe_values, dtype=float)
             if len(pe_array) < 30:
-                state.valuation_level = '正常'
-                state.valuation_percentile = None
-                state.historical_pe_avg = None
-                state.suggested_buy_price = round(current_price * 0.95, 2) if current_price else 0
+                self._mark_valuation_unavailable(
+                    state, 'insufficient', '估值数据不足',
+                    f'历史正PE样本不足（{len(pe_array)}个，至少需要30个），未提供估值参考价'
+                )
                 self._compute_long_term_pe(symbol, state, current_pe, current_price)
                 return
 
             avg_pe = float(np.mean(pe_array))
+            state.valuation_status = 'available'
+            state.valuation_note = (
+                '基于近365天正PE历史均值的静态估值参考，不包含技术面或情绪，'
+                '不构成买卖指令'
+            )
             state.historical_pe_avg = round(avg_pe, 2)
             percentile = float(np.sum(pe_array <= current_pe) / len(pe_array) * 100)
             state.valuation_percentile = round(percentile, 1)
@@ -427,33 +473,27 @@ class StockAnalysisAgent:
             else:
                 state.valuation_level = '很高'
 
-            # 建议买入价 = 当前价 × (历史PE均值 / 当前PE)
+            # 估值参考价 = 当前价 × (历史 PE 均值 / 当前 PE)。
+            # 不再混入固定折扣或技术指标，避免将交易规则伪装成估值结论。
             fair_value = current_price * (avg_pe / current_pe)
-            ti = state.technical_indicators or {}
-            boll_lower = ti.get('boll_lower') if isinstance(ti, dict) else None
-            if current_pe <= avg_pe:
-                buy_price = current_price
-            else:
-                buy_price = min(fair_value, current_price * 0.95)
-            if boll_lower and boll_lower > 0:
-                buy_price = max(boll_lower, buy_price)
-            state.suggested_buy_price = round(buy_price, 2)
+            state.suggested_buy_price = round(fair_value, 2)
 
             logger.info(f"[{symbol}] 估值: {state.valuation_level} (PE分位{percentile:.1f}%, "
-                       f"当前PE{current_pe} vs 均值{avg_pe:.1f}), 建议买入价: {state.suggested_buy_price}")
+                       f"当前PE{current_pe} vs 均值{avg_pe:.1f}), 估值参考价: {state.suggested_buy_price}")
 
             # 5年/10年长期PE分位
             self._compute_long_term_pe(symbol, state, current_pe, current_price)
 
         except Exception as e:
             logger.warning(f"[{symbol}] 估值计算失败: {e}")
-            state.valuation_level = '正常'
-            state.valuation_percentile = None
-            state.historical_pe_avg = None
-            state.suggested_buy_price = round((state.quote or {}).get('price', 100) * 0.95, 2)
+            self._mark_valuation_unavailable(
+                state, 'error', '估值计算失败', '估值计算异常，未提供估值参考价'
+            )
 
     def _compute_long_term_pe(self, symbol: str, state, current_pe, current_price):
         """计算5年和10年PE分位"""
+        if current_pe is None or current_pe <= 0:
+            return
         try:
             import numpy as np
             for label, days in [('5y', 1825), ('10y', 3650)]:

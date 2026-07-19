@@ -1309,7 +1309,7 @@ function renderWorkspacePlaceholder(batchMode = false) {
         <div class="card"><div class="label">当前价格</div><div class="placeholder-value">待获取</div><div class="sub">行情数据</div></div>
         <div class="card"><div class="label">每股分红（税后）</div><div class="placeholder-value">待获取</div><div class="sub">财务数据</div></div>
         <div class="card"><div class="label">成本价格</div><div class="placeholder-value">未设置</div><div class="sub">填写上方持仓成本后计算盈亏</div></div>
-        <div class="card"><div class="label">建议买入价格</div><div class="placeholder-value">待计算</div><div class="sub">基于行情、基本面与舆情综合评估</div></div>
+        <div class="card"><div class="label">估值参考价</div><div class="placeholder-value">待评估</div><div class="sub">仅在 PE 估值口径可用时显示</div></div>
         <div class="card"><div class="label">当前估值</div><div class="placeholder-value">待评估</div><div class="sub">PE、PB 与历史分位</div></div>
         <div class="card"><div class="label">总市值</div><div class="placeholder-value">待获取</div><div class="sub">含换手率信息</div></div>
         <div class="card"><div class="label">舆情情感</div><div class="placeholder-value">待分析</div><div class="sub">新闻与股吧热议综合判断</div></div>
@@ -2810,7 +2810,10 @@ function renderBatchStockResult(index, total, symbol, data) {
     // Instead, build a lightweight summary inline.
     const pred = data.prediction_summary || {};
     const cio = pred.cio_decision || {};
-    const valLevel = data.valuation_level || '正常';
+    const valLevel = data.valuation_level || '估值待获取';
+    const valuationNote = data.valuation_note || '未提供估值参考价';
+    const referencePrice = Number(data.suggested_buy_price);
+    const hasReferencePrice = Number.isFinite(referencePrice) && referencePrice > 0;
     const valCls = valLevel === '很低' || valLevel === '偏低' ? 'positive' :
                    valLevel === '偏高' || valLevel === '很高' ? 'negative' : 'neutral';
     const changePct = q.change_pct;
@@ -2840,7 +2843,7 @@ function renderBatchStockResult(index, total, symbol, data) {
       <div class="card">
         <div class="label">当前估值</div>
         <div class="value ${valCls}">${valLevel}</div>
-        <div class="sub">建议买入价: ${data.suggested_buy_price != null ? data.suggested_buy_price.toFixed(2) : '-'}</div>
+        <div class="sub">${hasReferencePrice ? '估值参考价: ' + referencePrice.toFixed(2) : escapeHtml(valuationNote)}</div>
       </div>
       <div class="card">
         <div class="label">ROE / EPS</div>
@@ -3231,8 +3234,10 @@ function renderAnalysis(data) {
   }
 
   // ---- CARDS GRID (7 cards) ----
-  const buyPrice = data.suggested_buy_price;
-  const valLevel = data.valuation_level || '正常';
+  const buyPrice = Number(data.suggested_buy_price);
+  const hasBuyPrice = Number.isFinite(buyPrice) && buyPrice > 0;
+  const valuationNote = data.valuation_note || '未提供估值参考价';
+  const valLevel = data.valuation_level || '估值待获取';
   const valCls = valLevel === '很低' || valLevel === '偏低' ? 'positive' :
                  valLevel === '偏高' || valLevel === '很高' ? 'negative' : 'neutral';
 
@@ -3267,14 +3272,14 @@ function renderAnalysis(data) {
       <div class="sub">${costPrice > 0 && price ? '盈亏 ' + cfmt((price/costPrice - 1)*100, 1).text + '%' : '输入后计算盈亏'}</div>
     </div>
     <div class="card">
-      <div class="label">建议买入价格</div>
-      <div class="value" style="color:#ff6348;">${buyPrice != null ? buyPrice.toFixed(2) : '-'}</div>
-      <div class="sub">${buyPrice && price ? '距现价 ' + ((buyPrice/price-1)*100).toFixed(1) + '%' : ''}</div>
+      <div class="label">估值参考价</div>
+      <div class="value">${hasBuyPrice ? buyPrice.toFixed(2) : '暂不适用'}</div>
+      <div class="sub">${hasBuyPrice && price ? '距现价 ' + ((buyPrice/price-1)*100).toFixed(1) + '%' : escapeHtml(valuationNote)}</div>
     </div>
     <div class="card">
       <div class="label">当前估值</div>
       <div class="value ${valCls}">${valLevel}</div>
-      <div class="sub">PE: ${q.pe != null ? q.pe.toFixed(1) : '-'} | PB: ${q.pb != null ? q.pb.toFixed(1) : '-'}${data.historical_pe_avg ? '<br>历史PE均值: ' + data.historical_pe_avg.toFixed(1) : ''}</div>
+      <div class="sub">PE: ${q.pe != null ? q.pe.toFixed(1) : '-'} | PB: ${q.pb != null ? q.pb.toFixed(1) : '-'}${data.historical_pe_avg ? '<br>历史PE均值: ' + data.historical_pe_avg.toFixed(1) : ''}${!hasBuyPrice ? '<br>' + escapeHtml(valuationNote) : ''}</div>
     </div>
     <div class="card">
       <div class="label">总市值</div>

@@ -52,8 +52,10 @@ class AnalysisState:
 
     # 估值分析
     valuation_level: str = ""
+    valuation_status: str = "unknown"  # available / unavailable / insufficient / error
+    valuation_note: str = ""
     valuation_percentile: Optional[float] = None  # None = 未计算/数据不可用
-    suggested_buy_price: float = 0.0
+    suggested_buy_price: Optional[float] = None  # 仅在 PE 估值有效时提供参考价
     historical_pe_avg: Optional[float] = None     # None = 未计算/数据不可用
 
     # 重要新闻/股吧摘要

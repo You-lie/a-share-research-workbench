@@ -414,7 +414,9 @@ class PredictionNode:
         price = q.get('price', 0) if isinstance(q, dict) else 0
         cost = state.get('cost_price', 0) or 0
         val = state.get('valuation_level', '正常')
-        sug = state.get('suggested_buy_price', 0) or 0
+        reference_price = state.get('suggested_buy_price')
+        reference_text = f"{reference_price:.2f}" if isinstance(reference_price, (int, float)) and reference_price > 0 else "暂不适用"
+        valuation_note = state.get('valuation_note') or ""
 
         cost_lines = ""
         if cost > 0:
@@ -423,13 +425,15 @@ class PredictionNode:
 ## 持仓信息
 - 成本价: {cost}  现价: {price}
 - 浮动盈亏: {pnl_pct:+.1f}%
-- 估值等级: {val}  建议买入价: {sug}
+- 估值等级: {val}  估值参考价: {reference_text}
+{f'- 估值说明: {valuation_note}' if valuation_note else ''}
 """
         else:
             cost_lines = f"""
 ## 参考价位
 - 现价: {price}  估值等级: {val}
-- 建议买入价: {sug}
+- 估值参考价: {reference_text}
+{f'- 估值说明: {valuation_note}' if valuation_note else ''}
 """
 
         return f"""## 股票信息
@@ -511,6 +515,7 @@ class PredictionNode:
         q = state.get('quote', {}) or {}
         pe_pct = state.get('valuation_percentile')
         pe_pct_str = f"{pe_pct:.1f}%" if pe_pct is not None else "N/A"
+        valuation_note = state.get('valuation_note') or ""
         lines = [
             f"PE: {q.get('pe','?')}  PB: {q.get('pb','?')}  市值: {q.get('market_cap','?')}亿",
             f"估值等级: {state.get('valuation_level','?')} (PE分位: {pe_pct_str})",
@@ -521,6 +526,8 @@ class PredictionNode:
             f"股息率: {fs.get('dividend_yield') or q.get('dividend_yield','N/A')}%",
             f"毛利率: {fs.get('gross_margin','?')}%  负债率: {fs.get('debt_ratio','?')}%",
         ]
+        if valuation_note:
+            lines.append(f"估值说明: {valuation_note}")
         return "\n".join(lines)
 
     def _build_sent_data(self, state: dict) -> str:
@@ -583,11 +590,13 @@ class PredictionNode:
         return PredictionResult(
             outlook=outlook,
             confidence=conf,
-            analysis_text=f"## {outlook}信号 (规则模式)\n\n综合评分 {score:.1f}",
-            reason=f"规则引擎: 综合评分{score:.1f}",
+            analysis_text=f"## {outlook}信号 (规则模式)\n\n综合评分 {score:.1f}\n\n规则模式不生成目标价。",
+            reason=f"规则引擎: 综合评分{score:.1f}；未生成目标价",
             price_target_current=price,
-            price_target_low=round(price * 0.95, 2) if price else None,
-            price_target_high=round(price * 1.10, 2) if price else None,
+            # The rule fallback has no defensible price-target model. Never fabricate
+            # a price range by applying fixed percentages to the current quote.
+            price_target_low=None,
+            price_target_high=None,
             risk_factors=[],
             positive_factors=[],
         )
