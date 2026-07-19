@@ -64,6 +64,8 @@ class AdvancedBackend(BaseStockBackend):
         self._manager = None
         self._init_error = None
         self._initialized = False
+        self._historical_pe_baostock = None
+        self._historical_pe_tushare = None
 
     @property
     def manager(self):
@@ -680,9 +682,48 @@ class AdvancedBackend(BaseStockBackend):
         return posts
 
     def get_historical_pe(self, symbol: str, days: int = 365 * 3) -> List[float]:
-        # PE is not typically available in daily OHLCV from most free sources.
-        # Tushare provides it via daily_basic, but through DataFetcherManager the daily
-        # data is standardized OHLCV only. Return empty list — callers should handle this.
+        """Fetch PE history outside the OHLCV-only DataFetcherManager pipeline."""
+        # BaoStock peTTM is stable for batch use and does not consume a limited
+        # Tushare daily_basic quota. Reuse its logged-in client across stocks.
+        try:
+            if self._historical_pe_baostock is None:
+                from market_data.a_stock_provider import BaoStockBackend
+
+                self._historical_pe_baostock = BaoStockBackend()
+            values = self._historical_pe_baostock.get_historical_pe(symbol, days)
+            positive_values = [value for value in values if value is not None and value > 0]
+            if len(positive_values) >= 30:
+                logger.info(
+                    "AdvancedBackend historical PE: %s positive BaoStock samples for %s",
+                    len(positive_values), symbol,
+                )
+                return positive_values
+            logger.warning(
+                "AdvancedBackend historical PE: BaoStock returned only %s positive samples for %s",
+                len(positive_values), symbol,
+            )
+        except Exception as exc:
+            logger.warning("AdvancedBackend historical PE: BaoStock failed for %s: %s", symbol, exc)
+
+        # Tushare daily_basic is the secondary source. Some accounts allow only
+        # one request per minute, so using it for every stock in a batch is slow.
+        try:
+            if self._historical_pe_tushare is None:
+                from market_data.tushare_provider import TushareBackend
+
+                self._historical_pe_tushare = TushareBackend()
+            values = self._historical_pe_tushare.get_historical_pe(symbol, days)
+            positive_values = [value for value in values if value is not None and value > 0]
+            if positive_values:
+                logger.info(
+                    "AdvancedBackend historical PE: %s positive Tushare samples for %s",
+                    len(positive_values), symbol,
+                )
+                return positive_values
+            logger.warning("AdvancedBackend historical PE: Tushare returned no positive samples for %s", symbol)
+        except Exception as exc:
+            logger.warning("AdvancedBackend historical PE: Tushare failed for %s: %s", symbol, exc)
+
         return []
 
     def _resolve_name(self, symbol: str) -> str:

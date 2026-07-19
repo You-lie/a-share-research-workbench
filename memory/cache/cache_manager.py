@@ -85,10 +85,12 @@ class CacheManager:
             symbol, fetch_fn, data_type="quote", symbol=symbol)
 
     def get_historical_pe(self, symbol: str, days: int, fetch_fn: Callable[[], Any]) -> Any:
-        """获取历史 PE 数据（TTL=1h），按 {symbol}:pe:{days} 缓存"""
+        """获取历史 PE 数据（TTL=1h），按带版本的键缓存。"""
         if not MEMORY_ENABLED:
             return fetch_fn()
-        key = f"{symbol}:pe:{days}"
+        # v2 avoids reusing the empty values saved before AdvancedBackend supported
+        # the Tushare daily_basic PE-history path.
+        key = f"{symbol}:pe:v2:{days}"
         return self._get_cache("historical_pe", CACHE_TTL_HISTORICAL).get_or_fetch(
             key, fetch_fn, data_type="historical_pe", symbol=symbol)
 
