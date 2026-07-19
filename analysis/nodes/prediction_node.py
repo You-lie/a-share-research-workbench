@@ -11,6 +11,7 @@ Moderator 阅读三方观点后综合裁决，输出最终预测。
 借鉴 BettaFish ForumEngine 的多 Agent 辩论模式。
 """
 import json
+import math
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, Dict, List, Any
@@ -77,6 +78,114 @@ class PredictionNode:
         self.base_url = base_url or os.environ.get('LLM_BASE_URL') or getattr(settings, 'LLM_BASE_URL', None) or 'https://api.openai.com/v1'
         self.model = model or os.environ.get('LLM_MODEL_NAME') or getattr(settings, 'LLM_MODEL_NAME', None) or 'gpt-4o-mini'
 
+    @staticmethod
+    def _finite_number(value) -> Optional[float]:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if math.isfinite(number) else None
+
+    @classmethod
+    def _forecast_direction(cls, forecast: Any) -> int:
+        """Return a directional vote without treating missing forecasts as bearish."""
+        if not isinstance(forecast, dict):
+            return 0
+        direction = str(forecast.get('direction') or '').strip()
+        if direction == '上涨':
+            return 1
+        if direction == '下跌':
+            return -1
+        change_pct = cls._finite_number(forecast.get('change_pct'))
+        if change_pct is None:
+            return 0
+        return 1 if change_pct > 0 else -1 if change_pct < 0 else 0
+
+    @classmethod
+    def _apply_decision_guardrails(cls, state: dict, payload: dict) -> dict:
+        """Keep model output as research, but reject contradictory trade instructions."""
+        result = dict(payload or {})
+        notes: list[str] = []
+
+        outlook = str(result.get('outlook') or '中性').strip()
+        if outlook not in {'看多', '看空', '中性'}:
+            outlook = '中性'
+            notes.append('综合方向无效，已按中性处理')
+
+        short_term = result.get('short_term') if isinstance(result.get('short_term'), dict) else None
+        mid_term = result.get('mid_term') if isinstance(result.get('mid_term'), dict) else None
+        long_term = result.get('long_term') if isinstance(result.get('long_term'), dict) else None
+        direction_sum = sum(cls._forecast_direction(item) for item in (short_term, mid_term, long_term))
+        if outlook == '看多' and direction_sum < 0:
+            outlook = '中性'
+            notes.append('多周期预测整体偏弱，综合方向已降为中性')
+        elif outlook == '看空' and direction_sum > 0:
+            outlook = '中性'
+            notes.append('多周期预测整体偏强，综合方向已降为中性')
+        result['outlook'] = outlook
+
+        quote = state.get('quote', {}) if isinstance(state, dict) else {}
+        price = cls._finite_number(quote.get('price') if isinstance(quote, dict) else None)
+        shares = cls._finite_number(state.get('shares') if isinstance(state, dict) else None) or 0
+        has_position = shares > 0
+
+        raw_action = result.get('suggested_action')
+        raw_action = raw_action if isinstance(raw_action, dict) else {}
+        action = str(raw_action.get('action') or '观望').strip()
+        action = {'减仓': '减持'}.get(action, action)
+        if action not in {'买入', '加仓', '持有', '减持', '卖出', '观望'}:
+            action = '观望'
+            notes.append('操作建议无效，已改为观望')
+
+        short_direction = cls._forecast_direction(short_term)
+        mid_direction = cls._forecast_direction(mid_term)
+        if action in {'买入', '加仓'} and (
+            outlook != '看多' or short_direction < 0 or mid_direction < 0
+        ):
+            action = '观望'
+            notes.append('买入/加仓与综合或短中期预测不一致，已改为观望')
+        elif action == '加仓' and not has_position:
+            action = '观望'
+            notes.append('未提供持仓数量，不能给出加仓建议，已改为观望')
+        elif action in {'持有', '减持', '卖出'} and not has_position:
+            action = '观望'
+            notes.append('未提供持仓数量，不能给出持有或卖出建议，已改为观望')
+
+        stop_loss = cls._finite_number(raw_action.get('stop_loss'))
+        take_profit = cls._finite_number(raw_action.get('take_profit'))
+        if action not in {'买入', '加仓', '持有'} or price is None or price <= 0:
+            stop_loss = None
+            take_profit = None
+        else:
+            if stop_loss is not None and not (0 < stop_loss < price):
+                stop_loss = None
+                notes.append('止损价不在现价下方，已隐藏')
+            if take_profit is not None and take_profit <= price:
+                take_profit = None
+                notes.append('止盈价不在现价上方，已隐藏')
+
+        action_reason = str(raw_action.get('reason') or '').strip()
+        if notes:
+            action_reason = f"{action_reason}；系统校验：{'；'.join(notes)}".strip('；')
+            result['confidence'] = '低'
+        result['suggested_action'] = {
+            'action': action,
+            'reason': action_reason or '仅供研究参考，请结合仓位、风险承受能力和成交条件手工判断。',
+            'stop_loss': stop_loss,
+            'take_profit': take_profit,
+        }
+
+        low = cls._finite_number(result.get('price_target_low'))
+        high = cls._finite_number(result.get('price_target_high'))
+        if price is None or price <= 0:
+            low = high = None
+        else:
+            low = low if low is not None and 0 < low < price else None
+            high = high if high is not None and high > price else None
+        result['price_target_low'] = low
+        result['price_target_high'] = high
+        return result
+
     # ── 主入口 ──
 
     def predict(self, state: dict) -> PredictionResult:
@@ -116,7 +225,9 @@ class PredictionNode:
 
         # 主持人综合裁决
         debate_text = self._format_debate(state, views)
-        final = self._call_moderator(client, state, views, debate_text)
+        final = self._apply_decision_guardrails(
+            state, self._call_moderator(client, state, views, debate_text)
+        )
 
         # 组装结果
         q = state.get('quote', {}) or {}
@@ -235,18 +346,51 @@ class PredictionNode:
         return self._build_master_result(state, cio_decision, reports)
 
     def _build_master_result(self, state: dict, cio_decision,
-                              reports: list) -> PredictionResult:
+                               reports: list) -> PredictionResult:
         """将 CIO 决策 + 员工报告合并为 PredictionResult"""
         from analysis.agents.base import CIODecision
         q = state.get('quote', {}) or {}
         price = q.get('price', 0) if isinstance(q, dict) else 0
 
         order = cio_decision.order or {}
-        action = order.get('action', '持有')
+        master_direction = cio_decision.short_term.get('direction', '中性') if cio_decision.short_term else '中性'
+        master_outlook = {'上涨': '看多', '下跌': '看空', '震荡': '中性'}.get(master_direction, master_direction)
+        guarded = self._apply_decision_guardrails(state, {
+            'outlook': master_outlook,
+            'confidence': cio_decision.decision_quality.get('confidence', '低') if cio_decision.decision_quality else '低',
+            'short_term': cio_decision.short_term,
+            'mid_term': cio_decision.mid_term,
+            'long_term': cio_decision.long_term,
+            'suggested_action': {
+                'action': order.get('action', '观望'),
+                'reason': order.get('entry_conditions', ''),
+                'stop_loss': order.get('stop_loss', {}).get('level') if isinstance(order.get('stop_loss'), dict) else None,
+                'take_profit': order.get('take_profit', {}).get('level_1') if isinstance(order.get('take_profit'), dict) else None,
+            },
+            'price_target_low': cio_decision.bear_case.get('target') if cio_decision.bear_case else None,
+            'price_target_high': cio_decision.bull_case.get('target') if cio_decision.bull_case else None,
+        })
+        # The frontend also renders the persisted CIO object directly. Keep it
+        # aligned with the guarded summary so two parts of one report cannot
+        # show conflicting trade instructions.
+        guarded_order = dict(order)
+        guarded_order.update({
+            'action': guarded['suggested_action']['action'],
+            'entry_conditions': guarded['suggested_action']['reason'],
+            'stop_loss': {
+                **(order.get('stop_loss') if isinstance(order.get('stop_loss'), dict) else {}),
+                'level': guarded['suggested_action']['stop_loss'] or 0,
+            },
+            'take_profit': {
+                **(order.get('take_profit') if isinstance(order.get('take_profit'), dict) else {}),
+                'level_1': guarded['suggested_action']['take_profit'] or 0,
+            },
+        })
+        cio_decision.order = guarded_order
 
         result = PredictionResult(
             analysis_text=cio_decision.decision_summary,
-            outlook=cio_decision.short_term.get('direction', '中性') if cio_decision.short_term else '中性',
+            outlook=guarded['outlook'],
             reason=cio_decision.decision_summary,
             risk_factors=[r for report in reports if not report.error for r in (report.risks or [])[:2]],
             positive_factors=[r for report in reports if not report.error for r in (report.key_points or [])[:2]],
@@ -259,16 +403,11 @@ class PredictionNode:
             mid_term=cio_decision.mid_term,
             long_term=cio_decision.long_term,
             # 操作建议
-            suggested_action={
-                'action': action,
-                'reason': order.get('entry_conditions', ''),
-                'stop_loss': order.get('stop_loss', {}).get('level', 0) if isinstance(order.get('stop_loss'), dict) else 0,
-                'take_profit': order.get('take_profit', {}).get('level_1', 0) if isinstance(order.get('take_profit'), dict) else 0,
-            },
+            suggested_action=guarded['suggested_action'],
             price_target_current=price,
-            price_target_low=cio_decision.bear_case.get('target', 0) if cio_decision.bear_case else 0,
-            price_target_high=cio_decision.bull_case.get('target', 0) if cio_decision.bull_case else 0,
-            confidence=cio_decision.decision_quality.get('confidence', '低') if cio_decision.decision_quality else '低',
+            price_target_low=guarded['price_target_low'],
+            price_target_high=guarded['price_target_high'],
+            confidence=guarded.get('confidence', '低'),
             raw_llm_output=cio_decision.raw_llm_output,
         )
 
@@ -477,14 +616,14 @@ class PredictionNode:
     "confidence": "高/中/低",
     "reason": "6~12月预测依据(40字内)"
   }},
-  "suggested_action": {{
-    "action": "买入/加仓/持有/减仓/卖出",
-    "reason": "操作理由(60字内)",
-    "stop_loss": {price * 0.93:.1f},
-    "take_profit": {price * 1.15:.1f}
-  }},
-  "price_target_low": {price * 0.93:.1f},
-  "price_target_high": {price * 1.10:.1f},
+   "suggested_action": {{
+     "action": "买入/加仓/持有/减持/卖出/观望",
+     "reason": "操作理由(60字内)",
+     "stop_loss": null,
+     "take_profit": null
+   }},
+   "price_target_low": null,
+   "price_target_high": null,
   "risk_factors": ["风险1", "风险2"],
   "positive_factors": ["积极因素1", "积极因素2"]
 }}
@@ -492,7 +631,9 @@ class PredictionNode:
 注意:
 - short_term.change_pct: 预计1-2周内的涨跌幅度，正数上涨负数下跌
 - mid_term.change_pct: 预计1-3月内的涨跌幅度，侧重估值回归
-- long_term.change_pct: 预计6-12月内的涨跌幅度，侧重基本面和行业趋势"""
+- long_term.change_pct: 预计6-12月内的涨跌幅度，侧重基本面和行业趋势
+- 没有明确的技术支撑/压力位、风险依据或情景测算时，止损、止盈和目标价必须为 null；不得使用固定百分比套算。
+- 买入或加仓只适用于综合判断看多且短期、中期不预测下跌的情况；其余情况使用观望。"""
 
     # ── 数据构造 (每个 Agent 只看自己的领域) ──
 

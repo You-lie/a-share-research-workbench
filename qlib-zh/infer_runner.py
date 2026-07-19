@@ -81,6 +81,20 @@ def _get_pred_date() -> str:
     return friday.strftime("%Y-%m-%d")
 
 
+def _prediction_freshness(pred_date: str) -> dict:
+    """Expose the data cutoff instead of treating an old calendar as current."""
+    try:
+        age_days = max(0, (datetime.now().date() - datetime.strptime(pred_date, "%Y-%m-%d").date()).days)
+    except (TypeError, ValueError):
+        return {"status": "unknown", "age_days": None, "message": "无法判断 Qlib 数据截止日"}
+    if age_days <= 3:
+        return {"status": "fresh", "age_days": age_days, "message": f"Qlib 数据截至 {pred_date}"}
+    return {
+        "status": "stale", "age_days": age_days,
+        "message": f"Qlib 数据截至 {pred_date}，已滞后 {age_days} 天；请更新数据后再用作当日判断",
+    }
+
+
 def _instrument_to_code(instrument: str) -> str:
     """将 qlib instrument 格式转为纯数字代码. SZ300394 → 300394, SH601899 → 601899."""
     for prefix in ("SZ", "SH", "BJ"):
@@ -126,6 +140,7 @@ def run_inference(
 
     cfg = _resolve_model(model_name)
     pred_date = os.environ.get("PRED_DATE_OVERRIDE") or _get_pred_date()
+    freshness = _prediction_freshness(pred_date)
     validate_runtime(require_data=True)
 
     # 如果模型自带 predict_only YAML（如 finetune 模型），优先使用
@@ -145,6 +160,8 @@ def run_inference(
 
     _log(f"模型: {model_name}")
     _log(f"市场: {cfg['market']} | 预测日期: {pred_date}")
+    if freshness['status'] == 'stale':
+        _log(f"警告: {freshness['message']}")
     _log(f"Qlib Python: {QLIB_PYTHON}")
 
     output_root = model_dir / "model_predict"
@@ -266,8 +283,11 @@ def run_inference(
         json_line = next((line for line in reversed(sb_lines) if line.lstrip().startswith("{")), "")
         if json_line:
             strategy_b_result = json.loads(json_line)
+            raw_candidates = strategy_b_result.pop('buy', [])
+            if raw_candidates:
+                strategy_b_result['model_candidates'] = raw_candidates
             _log(f"Strategy B: vetoed={len(strategy_b_result.get('vetoed',[]))}, "
-                 f"buy={len(strategy_b_result.get('buy',[]))}")
+                 f"candidates={len(strategy_b_result.get('model_candidates',[]))}")
         else:
             _log("Strategy B analysis failed: 未返回 JSON 结果")
     except Exception as e:
@@ -307,23 +327,25 @@ def run_inference(
                 keep_list.append({"stock": h,
                     "reason": f"在 buffer 内 (排名 {rank}/{total_universe})"})
 
-        # 建议买入：全市场 Top-5 非否决、非已持有
+        # 高分候选：全市场 Top-5 非否决、非已持有。它们只是模型排序结果，
+        # 仍须经过行情、基本面和人工复核，不能作为买入指令。
         held_set = set(holding_codes)
         buy_candidates = [r for r in all_rows
-                          if r["code"] not in held_set
-                          and r["code"] not in vetoed_codes]
-        buy_list = [{"stock": r["code"], "score": round(r["score"], 4)}
-                    for r in buy_candidates[:5]]
+                           if r["code"] not in held_set
+                           and r["code"] not in vetoed_codes]
+        candidate_list = [{"stock": r["code"], "score": round(r["score"], 4)}
+                          for r in buy_candidates[:5]]
 
         strategy_b_result["keep"] = keep_list
         strategy_b_result["sell"] = sell_list
-        strategy_b_result["buy"] = buy_list
-        _log(f"调仓: keep={len(keep_list)}, sell={len(sell_list)}, buy={len(buy_list)}")
+        strategy_b_result["model_candidates"] = candidate_list
+        _log(f"调仓候选: keep={len(keep_list)}, sell={len(sell_list)}, candidates={len(candidate_list)}")
 
     result = {
         "stocks": "/".join(stocks),
         "count": len(stocks),
         "pred_date": pred_date,
+        "data_freshness": freshness,
         "scores": scores_detail,
         "strategy_b": strategy_b_result,
     }
@@ -334,6 +356,7 @@ def run_inference(
         stocks=result["stocks"],
         count=result["count"],
         pred_date=result["pred_date"],
+        data_freshness=result["data_freshness"],
         scores=result["scores"],
         strategy_b=result["strategy_b"],
     )

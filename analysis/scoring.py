@@ -49,6 +49,17 @@ def safe_float(v: Any, default: float = 0.0) -> float:
         return default
 
 
+def optional_float(v: Any) -> Optional[float]:
+    """Return a finite number, keeping a missing value distinct from zero."""
+    try:
+        if v is None:
+            return None
+        value = float(v)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
+
+
 class ScoringEngine:
     """-5 ~ +5 综合评分引擎"""
 
@@ -74,9 +85,14 @@ class ScoringEngine:
         change_pct = safe_float(quote.get('change_pct', 0))
 
         # 可用性检测
+        fundamental_fields = (
+            'eps', 'roe', 'revenue', 'net_profit', 'revenue_yoy',
+            'net_profit_yoy', 'gross_margin', 'debt_ratio',
+            'operating_cash_flow', 'free_cash_flow', 'dividend_yield',
+        )
         available = {
             'technical': price > 0 and ti.get('rsi_14') is not None,
-            'fundamental': len(fin) > 0,
+            'fundamental': any(optional_float(fin.get(field)) is not None for field in fundamental_fields),
             'sentiment': bool(sent_news.get('total_count', 0) or sent_guba.get('total_count', 0)),
             'pe': getattr(state, 'valuation_percentile', None) is not None,
         }
@@ -366,11 +382,13 @@ class ScoringEngine:
 
     def _roe_score(self, state, fin: dict) -> float:
         """ROE + 现金流验证 [-1.5, +1.5]"""
-        roe = safe_float(fin.get('roe', 0))
-        debt_ratio = safe_float(fin.get('debt_ratio', 0))
-        operating_cf = safe_float(fin.get('operating_cash_flow', None))
-        free_cf = safe_float(fin.get('free_cash_flow', None))
-        net_profit = safe_float(fin.get('net_profit', None))
+        roe = optional_float(fin.get('roe'))
+        if roe is None:
+            return 0.0
+        debt_ratio = optional_float(fin.get('debt_ratio'))
+        operating_cf = optional_float(fin.get('operating_cash_flow'))
+        free_cf = optional_float(fin.get('free_cash_flow'))
+        net_profit = optional_float(fin.get('net_profit'))
         is_financial = _is_financial_industry(state) if hasattr(state, 'get') else False
 
         if roe > 25:
@@ -387,7 +405,7 @@ class ScoringEngine:
             base = -1.5
 
         # 高负债扣分（金融行业除外：银行/保险高负债是结构性特征）
-        if debt_ratio > 70 and not is_financial:
+        if debt_ratio is not None and debt_ratio > 70 and not is_financial:
             base -= 0.3
 
         # 现金流验证：经营现金流为正 → +0.2，自由现金流为负 → -0.4
@@ -407,27 +425,26 @@ class ScoringEngine:
 
     def _growth_score(self, fin: dict) -> float:
         """利润增长 + 营收增长 [-0.5, +1]"""
-        profit_yoy = safe_float(fin.get('net_profit_yoy', 0))
-        revenue_yoy = safe_float(fin.get('revenue_yoy', 0))
+        profit_yoy = optional_float(fin.get('net_profit_yoy'))
+        revenue_yoy = optional_float(fin.get('revenue_yoy'))
+        if profit_yoy is None and revenue_yoy is None:
+            return 0.0
 
-        profit_score = clamp(profit_yoy * 0.025, -0.5, 0.7)
-        revenue_score = clamp(revenue_yoy * 0.01, -0.2, 0.3)
+        profit_score = clamp(profit_yoy * 0.025, -0.5, 0.7) if profit_yoy is not None else 0.0
+        revenue_score = clamp(revenue_yoy * 0.01, -0.2, 0.3) if revenue_yoy is not None else 0.0
 
         return clamp(profit_score + revenue_score, -0.5, 1.0)
 
     def _dividend_score(self, fin: dict) -> float:
         """股息率: A 股高股息是加分项 [-0.3, +0.5]"""
-        # 股息率通常不在 financial_summary 中直接提供，从 PE/PB 反推或跳过
-        eps = safe_float(fin.get('eps', 0))
-        roe = safe_float(fin.get('roe', 0))
-        debt_ratio = safe_float(fin.get('debt_ratio', 0))
-
-        # 用 ROE 和负债率间接估计分红意愿
-        if eps > 0 and roe > 15 and debt_ratio < 50:
+        dividend_yield = optional_float(fin.get('dividend_yield'))
+        if dividend_yield is None:
+            return 0.0
+        if dividend_yield >= 6:
             return +0.5
-        elif eps > 0 and roe > 10:
+        elif dividend_yield >= 3:
             return +0.3
-        return 0
+        return +0.1 if dividend_yield > 0 else 0.0
 
     # ================================================================
     #  舆情面 (-5 ~ +5)

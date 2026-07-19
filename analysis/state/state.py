@@ -55,8 +55,12 @@ class AnalysisState:
     valuation_status: str = "unknown"  # available / unavailable / insufficient / error
     valuation_note: str = ""
     valuation_percentile: Optional[float] = None  # None = 未计算/数据不可用
-    suggested_buy_price: Optional[float] = None  # 仅在 PE 估值有效时提供参考价
+    # Kept for API compatibility. This is an implied PE valuation reference,
+    # not an executable buy instruction.
+    suggested_buy_price: Optional[float] = None
     historical_pe_avg: Optional[float] = None     # None = 未计算/数据不可用
+    historical_pe_median: Optional[float] = None  # 用于估值参考价的稳健中心值
+    historical_pe_sample_count: Optional[int] = None
 
     # 重要新闻/股吧摘要
     important_bullish_news: List[Dict] = field(default_factory=list)

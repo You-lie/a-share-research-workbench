@@ -238,7 +238,7 @@ class BaseAgent:
         lines = [
             f"PE: {q.get('pe', '?')}  PB: {q.get('pb', '?')}  市值: {q.get('market_cap', '?')}亿",
             f"估值等级: {state.get('valuation_level', '?')} (PE分位: {vp_str})",
-            f"历史PE均值: {state.get('historical_pe_avg') or 'N/A'}  "
+            f"历史PE中位数: {state.get('historical_pe_median') or 'N/A'}  "
             f"估值参考价: {reference_text}",
             f"EPS: {fs.get('eps', '?')}  ROE: {fs.get('roe', '?')}%  "
             f"经营现金流: {fs.get('operating_cash_flow', 'N/A')}亿  "
@@ -321,7 +321,7 @@ class BaseAgent:
             f"PE: {q.get('pe', '?')}  PB: {q.get('pb', '?')}  PS: {q.get('ps', 'N/A')}",
             f"总市值: {q.get('market_cap', '?')}亿",
             f"PE 历史分位: {vp_str} (近365日)",
-            f"历史 PE 均值: {state.get('historical_pe_avg') or 'N/A'}",
+            f"历史 PE 中位数: {state.get('historical_pe_median') or 'N/A'}",
             f"估值等级: {state.get('valuation_level', '正常')}",
             f"估值参考价: {reference_text}",
             f"EPS: {fs.get('eps', '?')}  ROE: {fs.get('roe', '?')}%",

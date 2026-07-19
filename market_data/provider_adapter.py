@@ -5,6 +5,7 @@ AdvancedBackend: 适配 daily_stock_analysis 的 DataFetcherManager 到 StockFis
 """
 
 import logging
+import re
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -60,12 +61,58 @@ class AdvancedBackend(BaseStockBackend):
     港股：Akshare > Longbridge > Yfinance
     """
 
+    _FINANCIAL_FIELDS = (
+        'revenue', 'revenue_yoy', 'net_profit', 'net_profit_yoy', 'eps',
+        'roe', 'gross_margin', 'debt_ratio', 'operating_cash_flow',
+        'free_cash_flow', 'dividend_per_share', 'dividend_yield',
+    )
+    _CORE_FINANCIAL_FIELDS = ('eps', 'roe', 'revenue', 'net_profit', 'net_profit_yoy')
+
     def __init__(self):
         self._manager = None
         self._init_error = None
         self._initialized = False
         self._historical_pe_baostock = None
         self._historical_pe_tushare = None
+
+    @classmethod
+    def _tag_financial_fields(cls, financial: FinancialSummary, source: str) -> None:
+        financial.source = financial.source or source
+        financial.source_chain = list(dict.fromkeys([*financial.source_chain, source]))
+        for field in cls._FINANCIAL_FIELDS:
+            if getattr(financial, field, None) is not None:
+                financial.field_sources.setdefault(field, source)
+
+    @classmethod
+    def _merge_missing_financial_fields(
+        cls, primary: FinancialSummary, fallback: FinancialSummary, source: str
+    ) -> list[str]:
+        """Merge only absent values and retain the field-level source trail."""
+        if primary.report_date and primary.report_date != fallback.report_date:
+            logger.info(
+                "AdvancedBackend: skip %s financial merge because report periods differ (%s vs %s)",
+                source, primary.report_date, fallback.report_date,
+            )
+            return []
+        merged = []
+        for field in cls._FINANCIAL_FIELDS:
+            if getattr(primary, field, None) is None and getattr(fallback, field, None) is not None:
+                setattr(primary, field, getattr(fallback, field))
+                primary.field_sources[field] = fallback.field_sources.get(field, source)
+                merged.append(field)
+
+        if merged:
+            primary.source_chain = list(dict.fromkeys([*primary.source_chain, source]))
+            fallback_period = fallback.report_date or '来源未提供报告期'
+            if not primary.report_date:
+                primary.report_date = fallback.report_date
+                primary.period_basis = fallback.period_basis
+            elif fallback.report_date and primary.report_date != fallback.report_date:
+                primary.period_basis = (
+                    f"字段来自多个源；主源报告期 {primary.report_date}，"
+                    f"{source} 报告期 {fallback_period}，请按字段来源核对"
+                )
+        return merged
 
     @property
     def manager(self):
@@ -315,6 +362,7 @@ class AdvancedBackend(BaseStockBackend):
                     period_basis='来源未明确口径',
                     retrieved_at=datetime.now().isoformat(),
                 )
+                self._tag_financial_fields(fin, 'akshare')
 
                 # AkShare 现金流数据可能存在于不同路径
                 _cf_report = earn_payload.get('financial_report') or earnings.get('financial_report') or {}
@@ -328,30 +376,50 @@ class AdvancedBackend(BaseStockBackend):
         except Exception as e:
             logger.debug(f"AdvancedBackend: 基本面适配器不可用 ({e})")
 
-        # 2. Tushare 直接查询兜底（仅 A 股）
-        if not (fin and (fin.eps or fin.roe)):
+        # 2. Tushare 只补齐缺失的决策字段；不覆盖已有值，保留每个字段的实际来源。
+        needs_tushare = fin is None or any(
+            getattr(fin, field, None) is None for field in self._CORE_FINANCIAL_FIELDS
+        )
+        if needs_tushare:
             try:
-                fin = self._get_tushare_financials(symbol, name)
-                if fin:
-                    fin.source = 'tushare'
-                    fin.endpoint = 'Tushare Pro 财务指标'
-                    fin.source_chain = ['tushare']
-                    fin.period_basis = '来源未明确口径'
-                    fin.retrieved_at = datetime.now().isoformat()
+                tushare_fin = self._get_tushare_financials(
+                    symbol, name, preferred_report_date=fin.report_date if fin else ''
+                )
+                if tushare_fin:
+                    tushare_fin.source = 'tushare'
+                    tushare_fin.endpoint = 'Tushare Pro 财务指标'
+                    tushare_fin.source_chain = ['tushare']
+                    tushare_fin.retrieved_at = datetime.now().isoformat()
+                    self._tag_financial_fields(tushare_fin, 'tushare')
+                    if fin is None:
+                        fin = tushare_fin
+                    else:
+                        merged = self._merge_missing_financial_fields(fin, tushare_fin, 'tushare')
+                        if merged:
+                            logger.info(f"AdvancedBackend: Tushare 补齐 {symbol} 字段: {', '.join(merged)}")
             except Exception as e:
                 logger.debug(f"AdvancedBackend: Tushare 基本面兜底失败 ({e})")
 
-        # 3. yfinance 直接兜底
-        if not (fin and (fin.eps or fin.roe or fin.revenue)):
+        # 3. yfinance 仅在核心字段仍不完整时补齐最后的空位。
+        needs_yfinance = fin is None or any(
+            getattr(fin, field, None) is None for field in self._CORE_FINANCIAL_FIELDS
+        )
+        if needs_yfinance:
             try:
-                fin = self._get_yfinance_financials(symbol, name)
-                if fin and (fin.eps or fin.roe or fin.revenue):
-                    fin.source = 'yfinance'
-                    fin.endpoint = 'Yahoo Finance 财务摘要'
-                    fin.source_chain = ['yfinance']
-                    fin.period_basis = '来源未明确口径'
-                    fin.retrieved_at = datetime.now().isoformat()
-                    logger.info(f"AdvancedBackend: yfinance 基本面兜底成功 {symbol}")
+                yfinance_fin = self._get_yfinance_financials(symbol, name)
+                if yfinance_fin and any(getattr(yfinance_fin, field, None) is not None for field in self._CORE_FINANCIAL_FIELDS):
+                    yfinance_fin.source = 'yfinance'
+                    yfinance_fin.endpoint = 'Yahoo Finance 财务摘要'
+                    yfinance_fin.source_chain = ['yfinance']
+                    yfinance_fin.period_basis = '来源未明确口径'
+                    yfinance_fin.retrieved_at = datetime.now().isoformat()
+                    self._tag_financial_fields(yfinance_fin, 'yfinance')
+                    if fin is None:
+                        fin = yfinance_fin
+                    else:
+                        merged = self._merge_missing_financial_fields(fin, yfinance_fin, 'yfinance')
+                        if merged:
+                            logger.info(f"AdvancedBackend: yfinance 补齐 {symbol} 字段: {', '.join(merged)}")
             except Exception as e:
                 logger.debug(f"AdvancedBackend: yfinance 基本面兜底失败 ({e})")
 
@@ -456,7 +524,9 @@ class AdvancedBackend(BaseStockBackend):
         except Exception:
             return None
 
-    def _get_tushare_financials(self, symbol: str, name: str) -> Optional[FinancialSummary]:
+    def _get_tushare_financials(
+        self, symbol: str, name: str, preferred_report_date: str = ''
+    ) -> Optional[FinancialSummary]:
         """通过 Tushare 官方 SDK 查询 fina_indicator + daily_basic 补全基本面"""
         from market_data.compat import get_config
         cfg = get_config()
@@ -486,10 +556,21 @@ class AdvancedBackend(BaseStockBackend):
             df = api.fina_indicator(ts_code=ts_code, limit=6)
             if df is None or df.empty:
                 return None
-            annual = df[df['end_date'].str.endswith('1231')]
-            if annual.empty:
-                annual = df  # 退市/新股用最新一期
-            r = annual.iloc[0]
+            selected = pd.DataFrame()
+            preferred = str(preferred_report_date or '').strip().upper()
+            preferred_digits = ''.join(re.findall(r'\d', preferred))
+            quarter_match = re.fullmatch(r'(\d{4})Q([1-4])', preferred)
+            if quarter_match:
+                quarter_end = {'1': '0331', '2': '0630', '3': '0930', '4': '1231'}[quarter_match.group(2)]
+                preferred_digits = f"{quarter_match.group(1)}{quarter_end}"
+            if len(preferred_digits) == 8:
+                selected = df[df['end_date'].astype(str) == preferred_digits]
+
+            if selected.empty:
+                annual = df[df['end_date'].str.endswith('1231')]
+                selected = annual if not annual.empty else df  # 退市/新股用最新一期
+            r = selected.iloc[0]
+            is_annual = str(r.get('end_date', '')).endswith('1231')
 
             eps = float(r['eps']) if pd.notna(r.get('eps')) else None
             roe = float(r['roe']) if pd.notna(r.get('roe')) else None
@@ -525,6 +606,7 @@ class AdvancedBackend(BaseStockBackend):
                 net_profit=net_profit, net_profit_yoy=net_profit_yoy,
                 gross_margin=gross_margin, debt_ratio=debt_ratio,
                 report_date=str(r.get('end_date', '')),
+                period_basis='年报' if is_annual else '最新披露期（累计/单季口径以来源为准）',
             )
         except Exception as e:
             logger.debug(f"_get_tushare_financials failed: {e}")

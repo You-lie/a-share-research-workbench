@@ -45,7 +45,20 @@ class ValuationReferenceTests(unittest.TestCase):
 
         self.assertEqual(state.valuation_status, "available")
         self.assertEqual(state.historical_pe_avg, 29.5)
+        self.assertEqual(state.historical_pe_median, 29.5)
         self.assertEqual(state.suggested_buy_price, 147.5)
+
+    @patch("analysis.agent.cache_manager.get_historical_pe", return_value=[10.0] * 39 + [500.0])
+    def test_valuation_reference_uses_median_not_an_extreme_pe(self, _historical_pe):
+        state = AnalysisState(symbol="000001", quote={"pe": 10.0, "price": 100.0})
+
+        self.agent._compute_valuation("000001", state)
+
+        self.assertEqual(state.historical_pe_avg, 22.25)
+        self.assertEqual(state.historical_pe_median, 10.0)
+        self.assertEqual(state.suggested_buy_price, 100.0)
+        self.assertEqual(state.valuation_percentile, 48.8)
+        self.assertEqual(state.valuation_level, "正常")
 
 
 class ValuationFallbackTests(unittest.TestCase):
@@ -94,6 +107,8 @@ class ValuationFallbackTests(unittest.TestCase):
         pick = analyzer._fallback_pick(results)
 
         self.assertEqual(pick["best_stock"]["symbol"], "000001")
+        self.assertEqual(pick["best_stock"]["suggested_action"], "观望")
+        self.assertEqual(pick["best_stock"]["suggested_position_pct"], 0)
 
 
 if __name__ == "__main__":

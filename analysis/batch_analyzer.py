@@ -329,7 +329,7 @@ class BatchAnalyzer:
         total_assets: float,
         available_cash: float,
     ) -> Optional[Dict]:
-        """调用 LLM 从多只股票中选出最值得买入的"""
+        """调用 LLM 从多只股票中找出最值得继续研究的候选。"""
         from analysis.agents.cio_prompts import get_master_info
 
         master_info = get_master_info(master) if master else None
@@ -373,7 +373,7 @@ class BatchAnalyzer:
 
         system_prompt = f"""你是一位资深基金经理，投资风格: {master_name}。你有{total_assets:.0f}元总资产和{available_cash:.0f}元可用资金。
 
-请根据以下{len(results)}只股票的分析结果，选出**当前最值得买入的一只股票**。
+请根据以下{len(results)}只股票的分析结果，选出**当前最值得继续研究的一只股票**。若没有任何标的同时满足风险收益比、基本面和趋势要求，必须明确返回无推荐，不能为了给出结果而推荐买入。
 
 选择标准:
 1. 安全边际（估值分位越低越好）
@@ -381,6 +381,7 @@ class BatchAnalyzer:
 3. 风险收益比（上行空间 vs 下行风险）
 4. 与投资风格的匹配度
 5. 当前价格是否有吸引力
+6. 低 PE 或高于现价的估值参考价，单独都不能构成买入理由；必须同时检查盈利趋势、风险和多周期预测。
 
 输出严格JSON:
 {{
@@ -389,7 +390,7 @@ class BatchAnalyzer:
     "name": "股票名",
     "reasons": ["理由1: 具体数据支撑(20字)", "理由2", "理由3"],
     "suggested_action": "买入/加仓/观望",
-    "suggested_position_pct": 15,
+    "suggested_position_pct": 0,
     "position_note": "在{total_assets:.0f}元总资产、{available_cash:.0f}元可用资金约束下的仓位建议说明(50字)",
     "target_price": 0,
     "risk_note": "主要风险提示(30字)"
@@ -400,9 +401,11 @@ class BatchAnalyzer:
     "reasons": ["次选理由(20字)"]
   }},
   "selection_rationale": "为什么选择该股而非其他候选的综合判断(100字)"
-}}"""
+}}
 
-        user_prompt = f"""## 候选股票\n{stocks_text}\n请选出当前最值得买入的股票。"""
+当没有合格候选时，返回 {{"best_stock": null, "runner_up": null, "selection_rationale": "无合格候选及原因"}}。"""
+
+        user_prompt = f"""## 候选股票\n{stocks_text}\n请判断是否存在值得继续研究的候选；不合格时返回无推荐。"""
 
         try:
             result = self._call_llm(system_prompt, user_prompt, temperature=0.3)
@@ -539,9 +542,9 @@ class BatchAnalyzer:
                     f"估值分位: {vp_str}%",
                     f"综合评分: {best_d.get('score_breakdown', {}).get('final', 'N/A')}",
                 ],
-                'suggested_action': '买入',
-                'suggested_position_pct': 15,
-                'position_note': '规则降级推荐，建议启用LLM获得更全面的分析',
+                'suggested_action': '观望',
+                'suggested_position_pct': 0,
+                'position_note': '规则降级只做排序，未完成跨股票风险判断，不形成买入建议',
                 'target_price': 0,
                 'risk_note': '数据不完整，请谨慎参考',
             },
@@ -550,5 +553,5 @@ class BatchAnalyzer:
                 'name': runner_d.get('stock_name', '') if runner and (runner_d := runner['data']) else '',
                 'reasons': ['次优评分'] if runner else [],
             } if runner else None,
-            'selection_rationale': f'(规则降级) 基于综合评分和估值分位的简单排序选出 {best["symbol"]}。建议启用 LLM 获得深度分析。',
+            'selection_rationale': f'(规则降级) 基于综合评分和估值分位的简单排序列出 {best["symbol"]} 作为观察候选，不构成买入建议。建议启用 LLM 获得深度分析。',
         }

@@ -326,6 +326,13 @@ class StockAnalysisAgent:
                 'cio_decision': getattr(prediction, 'cio_decision', None),
                 'employee_reports': getattr(prediction, 'employee_reports', []),
             }
+            # Keep the top-level state in sync with prediction_summary.  The
+            # paper-portfolio prefill reads these fields and must not silently
+            # fall back to a buy action when the analysis says to observe.
+            state.short_term_pred = prediction.short_term
+            state.mid_term_pred = prediction.mid_term
+            state.long_term_pred = prediction.long_term
+            state.suggested_action = prediction.suggested_action
             state.price_target = {
                 'current': prediction.price_target_current,
                 'low': prediction.price_target_low,
@@ -387,7 +394,18 @@ class StockAnalysisAgent:
         state.valuation_note = note
         state.valuation_percentile = None
         state.historical_pe_avg = None
+        state.historical_pe_median = None
+        state.historical_pe_sample_count = None
         state.suggested_buy_price = None
+
+    @staticmethod
+    def _pe_percentile(pe_values, current_pe: float) -> Optional[float]:
+        """Midpoint percentile so tied PE values stay near their actual rank."""
+        if len(pe_values) == 0:
+            return None
+        lower_share = sum(1 for value in pe_values if value < current_pe) / len(pe_values)
+        equal_share = sum(1 for value in pe_values if value == current_pe) / len(pe_values)
+        return (lower_share + equal_share / 2) * 100
 
     def _compute_valuation(self, symbol: str, state: AnalysisState):
         """仅在 PE 与历史样本有效时计算 PE 估值参考。"""
@@ -452,14 +470,20 @@ class StockAnalysisAgent:
                 self._compute_long_term_pe(symbol, state, current_pe, current_price)
                 return
 
+            # A very small positive TTM profit can produce an extreme PE.  Use
+            # the median for the reference price so a few dates cannot dominate it.
             avg_pe = float(np.mean(pe_array))
+            median_pe = float(np.median(pe_array))
             state.valuation_status = 'available'
             state.valuation_note = (
-                '基于近365天正PE历史均值的静态估值参考，不包含技术面或情绪，'
+                f'基于近365天{len(pe_array)}个正PE样本的历史中位数静态估值参考，'
+                '假设盈利水平不变，不包含技术面、行业景气或情绪，'
                 '不构成买卖指令'
             )
             state.historical_pe_avg = round(avg_pe, 2)
-            percentile = float(np.sum(pe_array <= current_pe) / len(pe_array) * 100)
+            state.historical_pe_median = round(median_pe, 2)
+            state.historical_pe_sample_count = int(len(pe_array))
+            percentile = self._pe_percentile(pe_array, current_pe)
             state.valuation_percentile = round(percentile, 1)
 
             if percentile < 10:
@@ -473,13 +497,13 @@ class StockAnalysisAgent:
             else:
                 state.valuation_level = '很高'
 
-            # 估值参考价 = 当前价 × (历史 PE 均值 / 当前 PE)。
-            # 不再混入固定折扣或技术指标，避免将交易规则伪装成估值结论。
-            fair_value = current_price * (avg_pe / current_pe)
+            # 估值参考价 = 当前价 × (历史 PE 中位数 / 当前 PE)。
+            # It is a valuation scenario, never a price to place an order at.
+            fair_value = current_price * (median_pe / current_pe)
             state.suggested_buy_price = round(fair_value, 2)
 
             logger.info(f"[{symbol}] 估值: {state.valuation_level} (PE分位{percentile:.1f}%, "
-                       f"当前PE{current_pe} vs 均值{avg_pe:.1f}), 估值参考价: {state.suggested_buy_price}")
+                       f"当前PE{current_pe} vs 中位数{median_pe:.1f}), 估值参考价: {state.suggested_buy_price}")
 
             # 5年/10年长期PE分位
             self._compute_long_term_pe(symbol, state, current_pe, current_price)
@@ -502,10 +526,17 @@ class StockAnalysisAgent:
                     lambda d=days: self.provider.get_historical_pe(symbol, days=d)
                 )
                 if pe_vals and len(pe_vals) >= 120:
-                    arr = np.array(pe_vals, dtype=float)
-                    arr = arr[arr > 0]
+                    values = []
+                    for value in pe_vals:
+                        try:
+                            value = float(value)
+                        except (TypeError, ValueError):
+                            continue
+                        if math.isfinite(value) and value > 0:
+                            values.append(value)
+                    arr = np.array(values, dtype=float)
                     if len(arr) >= 120:
-                        pct = round(float(np.sum(arr <= current_pe) / len(arr) * 100), 1)
+                        pct = round(self._pe_percentile(arr, current_pe), 1)
                         avg = round(float(np.mean(arr)), 2)
                         if label == '5y':
                             state.valuation_percentile_5y = pct

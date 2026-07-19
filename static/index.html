@@ -1101,7 +1101,7 @@ function renderPaperPortfolio() {
   const trades = paperPortfolioState.trades || [];
   const suggested = prefill.suggested_action || {};
   const actionMap = { '买入': 'buy', '加仓': 'add', '减持': 'reduce', '清空': 'clear', '卖出': 'clear' };
-  const defaultAction = prefill.action || actionMap[suggested.action] || 'buy';
+  const defaultAction = prefill.action || actionMap[suggested.action] || '';
   const defaultName = prefill.name || '';
   const defaultSymbol = prefill.symbol || '';
   const defaultPrice = prefill.price || '';
@@ -1139,7 +1139,7 @@ function renderPaperPortfolio() {
   html += '</div></div><aside><div class="paper-panel"><h2>手工确认成交</h2>';
   if (correctionTradeId) html += `<div class="paper-alert">正在更正流水 #${Number(correctionTradeId)}。确认后原记录会保留为已更正，新记录会回指原记录。</div>`;
   else if (prefill.symbol) html += `<div class="paper-alert">已从 ${escapeHtml(prefill.name || prefill.symbol)} 的分析结果预填。请确认成交价、数量和时间后再记录。</div>`;
-  html += `<form class="paper-form" onsubmit="submitPaperTrade(event)"><label>操作<select id="paperAction" onchange="handlePaperActionChange()"><option value="buy" ${defaultAction === 'buy' ? 'selected' : ''}>买入</option><option value="add" ${defaultAction === 'add' ? 'selected' : ''}>加仓</option><option value="reduce" ${defaultAction === 'reduce' ? 'selected' : ''}>减持</option><option value="clear" ${defaultAction === 'clear' ? 'selected' : ''}>清空</option></select></label><label>成交时间<input id="paperTradeAt" type="datetime-local" value="${paperDateTimeValue(prefill.trade_at)}" required /></label><label>股票代码<input id="paperSymbol" value="${escapeHtml(defaultSymbol)}" placeholder="例如 600519" required /></label><label>股票名称<input id="paperName" value="${escapeHtml(defaultName)}" placeholder="选填" /></label><label>成交价<input id="paperPrice" type="number" min="0.01" step="0.01" value="${escapeHtml(defaultPrice)}" required /></label><label>成交数量<input id="paperQuantity" type="number" min="1" step="1" value="${escapeHtml(defaultQuantity)}" placeholder="买入须为100股整数倍" /></label><label class="paper-full">复盘备注<textarea id="paperNote" placeholder="为什么执行、预期和执行条件">${escapeHtml(prefill.reason || '')}</textarea></label><div class="paper-full paper-actions"><button class="paper-primary" type="submit">${correctionTradeId ? '确认更正并保留原记录' : '确认记入纸面组合'}</button><button type="button" onclick="clearPaperPrefill()">清空预填</button><span id="paperTradeStatus" class="paper-status"></span></div></form></div>
+  html += `<form class="paper-form" onsubmit="submitPaperTrade(event)"><label>操作<select id="paperAction" onchange="handlePaperActionChange()" required><option value="" ${!defaultAction ? 'selected' : ''} disabled>请选择手工操作</option><option value="buy" ${defaultAction === 'buy' ? 'selected' : ''}>买入</option><option value="add" ${defaultAction === 'add' ? 'selected' : ''}>加仓</option><option value="reduce" ${defaultAction === 'reduce' ? 'selected' : ''}>减持</option><option value="clear" ${defaultAction === 'clear' ? 'selected' : ''}>清空</option></select></label><label>成交时间<input id="paperTradeAt" type="datetime-local" value="${paperDateTimeValue(prefill.trade_at)}" required /></label><label>股票代码<input id="paperSymbol" value="${escapeHtml(defaultSymbol)}" placeholder="例如 600519" required /></label><label>股票名称<input id="paperName" value="${escapeHtml(defaultName)}" placeholder="选填" /></label><label>成交价<input id="paperPrice" type="number" min="0.01" step="0.01" value="${escapeHtml(defaultPrice)}" required /></label><label>成交数量<input id="paperQuantity" type="number" min="1" step="1" value="${escapeHtml(defaultQuantity)}" placeholder="先选择操作" /></label><label class="paper-full">复盘备注<textarea id="paperNote" placeholder="为什么执行、预期和执行条件">${escapeHtml(prefill.reason || '')}</textarea></label><div class="paper-full paper-actions"><button class="paper-primary" type="submit">${correctionTradeId ? '确认更正并保留原记录' : '确认记入纸面组合'}</button><button type="button" onclick="clearPaperPrefill()">清空预填</button><span id="paperTradeStatus" class="paper-status"></span></div></form></div>
   <div class="paper-panel" style="margin-top:16px;"><h2>成本设置</h2><form class="paper-form" onsubmit="savePaperSettings(event)"><label class="paper-full">初始资金<input id="paperInitialCash" type="number" min="0" step="0.01" value="${settings.initial_cash}" required /></label><label>买卖佣金 (%)<input id="paperCommissionRate" type="number" min="0" max="10" step="0.001" value="${(Number(settings.commission_rate) * 100).toFixed(3)}" required /></label><label>卖出印花税 (%)<input id="paperStampRate" type="number" min="0" max="10" step="0.001" value="${(Number(settings.sell_stamp_duty_rate) * 100).toFixed(3)}" required /></label><div class="paper-full paper-actions"><button type="submit">保存成本设置</button><span id="paperSettingsStatus" class="paper-status"></span></div></form></div></aside></section>`;
   output.innerHTML = html;
   handlePaperActionChange();
@@ -1149,6 +1149,12 @@ function handlePaperActionChange() {
   const action = document.getElementById('paperAction');
   const quantity = document.getElementById('paperQuantity');
   if (!action || !quantity) return;
+  if (!action.value) {
+    quantity.disabled = true;
+    quantity.placeholder = '先选择手工操作';
+    quantity.value = '';
+    return;
+  }
   const clearing = action.value === 'clear';
   quantity.disabled = clearing;
   quantity.placeholder = clearing ? '自动使用全部当前持仓' : (action.value === 'buy' || action.value === 'add' ? '买入须为100股整数倍' : '不超过当前持仓');
@@ -1227,6 +1233,11 @@ async function submitPaperTrade(event) {
     note: document.getElementById('paperNote').value.trim(),
     analysis_snapshot: prefill.analysis_snapshot || {},
   };
+  if (!payload.action) {
+    status.textContent = '请先选择手工操作。';
+    status.style.color = 'var(--danger)';
+    return;
+  }
   status.textContent = '正在记录...';
   try {
     const correctionTradeId = paperPortfolioState.correctionTradeId;
@@ -1880,7 +1891,11 @@ async function startQlibInfer() {
 
       if (data.status === 'completed') {
         document.getElementById('symbolInput').value = data.stocks;
-        statusEl.textContent = `✅ 完成 — 已填入 ${data.count || 20} 只股票 (预测日: ${data.pred_date || '-'})`;
+        const freshness = data.data_freshness || {};
+        const freshnessText = freshness.status === 'stale'
+          ? ` | ⚠ ${freshness.message || 'Qlib 数据已过期'}`
+          : freshness.message ? ` | ${freshness.message}` : '';
+        statusEl.textContent = `✅ 完成 — 已填入 ${data.count || 20} 只模型高分候选 (预测日: ${data.pred_date || '-'})${freshnessText}`;
         btn.disabled = false;
         es.close();
       }
@@ -3279,7 +3294,7 @@ function renderAnalysis(data) {
     <div class="card">
       <div class="label">当前估值</div>
       <div class="value ${valCls}">${valLevel}</div>
-      <div class="sub">PE: ${q.pe != null ? q.pe.toFixed(1) : '-'} | PB: ${q.pb != null ? q.pb.toFixed(1) : '-'}${data.historical_pe_avg ? '<br>历史PE均值: ' + data.historical_pe_avg.toFixed(1) : ''}${!hasBuyPrice ? '<br>' + escapeHtml(valuationNote) : ''}</div>
+      <div class="sub">PE: ${q.pe != null ? q.pe.toFixed(1) : '-'} | PB: ${q.pb != null ? q.pb.toFixed(1) : '-'}${data.historical_pe_median ? '<br>历史PE中位数: ' + data.historical_pe_median.toFixed(1) + (data.historical_pe_sample_count ? '（' + data.historical_pe_sample_count + '个样本）' : '') : ''}${!hasBuyPrice ? '<br>' + escapeHtml(valuationNote) : ''}</div>
     </div>
     <div class="card">
       <div class="label">总市值</div>

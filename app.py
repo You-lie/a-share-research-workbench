@@ -1264,6 +1264,7 @@ def qlib_infer():
         'count': 0,
         'scores': [],
         'pred_date': '',
+        'data_freshness': {},
         'error': '',
         'created_at': datetime.now().isoformat(),
         'completed_at': None,
@@ -1282,10 +1283,11 @@ def qlib_infer():
                 if status == 'completed':
                     _update_qlib(task_id, 1.0, 'completed', message,
                                  stocks=event_data.get('stocks', ''),
-                                 count=event_data.get('count', 0),
-                                 scores=event_data.get('scores', []),
-                                 pred_date=event_data.get('pred_date', ''),
-                                 strategy_b=event_data.get('strategy_b', {}))
+                                  count=event_data.get('count', 0),
+                                  scores=event_data.get('scores', []),
+                                  pred_date=event_data.get('pred_date', ''),
+                                  data_freshness=event_data.get('data_freshness', {}),
+                                  strategy_b=event_data.get('strategy_b', {}))
                 else:
                     progress = 0.5 if '推理' in message else 0.1
                     _update_qlib(task_id, progress, 'running', message)
@@ -1302,6 +1304,7 @@ def qlib_infer():
                     qt['count'] = result.get('count', 0)
                     qt['scores'] = result.get('scores', [])
                     qt['pred_date'] = result.get('pred_date', '')
+                    qt['data_freshness'] = result.get('data_freshness', {})
                     qt['message'] = f"完成 — 已选出 {result.get('count', 0)} 只股票"
 
         except Exception as e:
@@ -1339,6 +1342,7 @@ def qlib_infer_stream(task_id):
                 data['stocks'] = qt.get('stocks', '')
                 data['count'] = qt.get('count', 0)
                 data['pred_date'] = qt.get('pred_date', '')
+                data['data_freshness'] = qt.get('data_freshness', {})
                 data['strategy_b'] = qt.get('strategy_b', {})
                 yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
                 break

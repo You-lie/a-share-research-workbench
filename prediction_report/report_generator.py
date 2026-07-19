@@ -433,7 +433,7 @@ class PredictionReportGenerator:
         val_section = ''
         if val_level or buy_price is not None:
             val_section += '''  <div class="section">
-    <div class="section-title">💰 估值与建议买点</div>
+    <div class="section-title">💰 PE 估值参考</div>
     <div class="grid">
 '''
             if val_level:
@@ -448,9 +448,9 @@ class PredictionReportGenerator:
                 cur_price = s.get('current_price', 0)
                 gap = f"{(buy_price / cur_price - 1) * 100:.1f}%" if cur_price else ''
                 val_section += f'''      <div class="card">
-        <div class="label">建议买入价</div>
+        <div class="label">估值参考价</div>
         <div class="value" style="color:#ff6348;">¥{buy_price:.2f}</div>
-        <div class="sub">距现价 {gap}</div>
+        <div class="sub">按历史 PE 口径推算，距现价 {gap}</div>
       </div>
 '''
             cost = s.get('cost_price', 0)
