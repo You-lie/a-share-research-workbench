@@ -1,0 +1,90 @@
+On branch master
+Changes to be committed:
+  (use "git restore --staged <file>..." to unstage)
+	deleted:    ../LICENSE
+
+Changes not staged for commit:
+  (use "git add/rm <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	deleted:    ../.dockerignore
+	modified:   ../.env.example
+	modified:   ../.gitignore
+	modified:   ../AGENTS.md
+	deleted:    ../ARCHITECTURE.md
+	deleted:    ../Dockerfile
+	deleted:    ../Dockerfile.mirofish
+	modified:   ../MiroFish/backend/app/config.py
+	modified:   ../MiroFish/backend/app/utils/locale.py
+	modified:   ../MiroFish/backend/run.py
+	modified:   ../README.md
+	deleted:    ../TODO.md
+	modified:   ../analysis/agent.py
+	modified:   ../analysis/batch_analyzer.py
+	modified:   ../app.py
+	deleted:    ../batch_results/batch_3e7f7c99a3ad/600519.json
+	deleted:    ../batch_results/batch_7d4058e4819b/600519.json
+	deleted:    ../batch_results/batch_8c9bcce9f38b/600066.json
+	deleted:    ../batch_results/batch_8c9bcce9f38b/600309.json
+	deleted:    ../batch_results/batch_8c9bcce9f38b/603993.json
+	modified:   ../config.py
+	modified:   ../config_health.py
+	modified:   ../data/sentiment_history/600000.json
+	modified:   ../data/sentiment_history/600009.json
+	modified:   ../data/sentiment_history/600010.json
+	modified:   ../data/sentiment_history/600011.json
+	modified:   ../data/sentiment_history/600519.json
+	deleted:    ../docker-compose.yml
+	deleted:    ../docs/master-audit.md
+	deleted:    ../integration/__init__.py
+	deleted:    ../integration/lark_bot.py
+	deleted:    ../integration/lark_card.py
+	deleted:    ../integration/lark_client.py
+	deleted:    ../integration/lark_prefs.py
+	modified:   ../market_data/a_stock_provider.py
+	modified:   ../market_data/data_fetchers/tushare_fetcher.py
+	modified:   ../market_data/provider_adapter.py
+	modified:   ../market_data/sentiment_collector.py
+	modified:   ../market_data/tushare_provider.py
+	modified:   ../prediction_report/report_generator.py
+	modified:   data_runner.py
+	modified:   examples/benchmarks/LightGBM/workflow_config_lightgbm_Alpha158.yaml
+	modified:   finetune_alpha158.py
+	modified:   infer_runner.py
+	modified:   scripts/data_runner.py
+	modified:   scripts/finetune_alpha158.py
+	modified:   scripts/practice/build_features_from_h5.py
+	modified:   scripts/practice/gen_practice_yaml.py
+	modified:   scripts/practice/multi_horizon_label_handler.py
+	modified:   scripts/practice/rerun_full_backtest.py
+	modified:   scripts/practice/run_stage2_practice.py
+	modified:   scripts/practice/run_stage2_walk_forward.py
+	modified:   scripts/practice/stage1_data_health.py
+	modified:   scripts/practice/stage1_data_health_extra.py
+	modified:   scripts/practice/stage3_first_screen.py
+	modified:   scripts/practice/stage4_risk_eval.py
+	modified:   scripts/practice/stage5_second_screen.py
+	modified:   scripts/small/stage1_data_health_small.py
+	modified:   scripts/small/stage3_live_topk.py
+	modified:   scripts/small/templates/workflow_config_lightgbm_Alpha158_allmarket.yaml
+	modified:   scripts/small/templates/workflow_config_lightgbm_Alpha158_csi1000.yaml
+	modified:   scripts/small/templates/workflow_config_xgboost_Alpha158_allmarket.yaml
+	modified:   scripts/small/templates/workflow_config_xgboost_Alpha158_csi1000.yaml
+	modified:   scripts/train_runner.py
+	modified:   strategy_b_analyze.py
+	modified:   train_runner.py
+	modified:   ../requirements.txt
+	deleted:    ../run.sh
+	deleted:    ../scripts/master_audit.py
+	modified:   ../simulation_bridge/orchestrator.py
+	modified:   ../static/index.html
+	deleted:    ../sxsc_tushare/__init__.py
+	deleted:    ../sxsc_tushare/dataapi.py
+	deleted:    ../sxsc_tushare/upass.py
+	deleted:    ../tests/__init__.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	local_runtime.py
+	mlruns/
+	sitecustomize.py
+

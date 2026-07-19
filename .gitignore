@@ -1,0 +1,103 @@
+# 环境变量 / 密钥
+.env
+*.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+
+# Qlib 推理缓存
+qlib-zh/DATA/
+qlib-zh/models/
+qlib-zh/runtime/
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 生成输出
+data/outputs/
+data/sentiment_history/
+
+# 本地纸面组合与 SQLite 运行文件
+data/paper_portfolio.db*
+data/*.sqlite
+data/*.sqlite3
+data/*.db-wal
+data/*.db-shm
+*.dist-info/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 日志与输出
+*.log
+logs/
+*.html.report
+
+# MiroFish 本地推演产物、上传文件与日志
+MiroFish/backend/uploads/
+MiroFish/backend/logs/
+
+# 临时文件
+*.tmp
+*.bak
+*.csv
+!requirements.txt
+
+# 敏感数据
+~/.jsdata_tk.csv
+token*.txt
+*_token*
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Node
+node_modules/
+.package-lock.json
+
+# 大文件/数据文件
+*.h5
+*.hdf5
+*.pkl
+*.parquet
+pickle_cache/
+
+# wget
+wget-log*
+
+# Memory system (runtime data, regeneratable)
+memory/cache/data/
+memory/stocks/[0-9][0-9][0-9][0-9][0-9][0-9]/
+memory/analysis/
+memory/masters/records/
+
+# Local credential and certificate exports
+.secrets/
+secrets/
+credentials/
+*.pem
+*.p12
+*.pfx
+
+# Model archives
+*.tar.gz
