@@ -116,6 +116,15 @@ def _full_cycle_metrics(path: Path) -> dict:
     return result
 
 
+def _fold_workflow_config(fold_dir: Path) -> Path | None:
+    """Find the saved workflow config without assuming a CSI300 model name."""
+    model_runs_dir = fold_dir / "model_runs"
+    if not model_runs_dir.is_dir():
+        return None
+    configs = sorted(model_runs_dir.glob("*/workflow_config_practice.yaml"))
+    return configs[0] if configs else None
+
+
 def load_backtest(models_dir: Path, model_name: str) -> dict:
     """Return only existing Qlib outputs; absent values remain explicitly unavailable."""
     model_dir = resolve_model_dir(models_dir, model_name)
@@ -125,15 +134,15 @@ def load_backtest(models_dir: Path, model_name: str) -> dict:
     market, benchmark = _market_info(model_name)
     last_fold = folds[-1] if folds else {}
     fold_dir = output_dir / "walk_forward" / str(last_fold.get("signal_date") or "")
-    config_path = fold_dir / "model_runs" / "lightgbm" / "workflow_config_practice.yaml"
-    config_market = _yaml_scalar(config_path, "market")
-    config_benchmark = _yaml_scalar(config_path, "benchmark")
-    config_topk = _yaml_scalar(config_path, "topk")
-    config_n_drop = _yaml_scalar(config_path, "n_drop")
-    config_account = _yaml_scalar(config_path, "account")
-    open_cost = _yaml_scalar(config_path, "open_cost")
-    close_cost = _yaml_scalar(config_path, "close_cost")
-    min_cost = _yaml_scalar(config_path, "min_cost")
+    config_path = _fold_workflow_config(fold_dir)
+    config_market = _yaml_scalar(config_path, "market") if config_path else None
+    config_benchmark = _yaml_scalar(config_path, "benchmark") if config_path else None
+    config_topk = _yaml_scalar(config_path, "topk") if config_path else None
+    config_n_drop = _yaml_scalar(config_path, "n_drop") if config_path else None
+    config_account = _yaml_scalar(config_path, "account") if config_path else None
+    open_cost = _yaml_scalar(config_path, "open_cost") if config_path else None
+    close_cost = _yaml_scalar(config_path, "close_cost") if config_path else None
+    min_cost = _yaml_scalar(config_path, "min_cost") if config_path else None
     full_cycle = _full_cycle_metrics(model_dir / "report_of_backtest.txt")
     availability = {
         metric: any(row.get(metric) is not None for row in folds)
@@ -155,7 +164,7 @@ def load_backtest(models_dir: Path, model_name: str) -> dict:
             "open_cost_rate": open_cost,
             "close_cost_rate": close_cost,
             "min_cost": min_cost,
-            "cost_source": str(config_path.relative_to(model_dir)) if config_path.is_file() else "未找到该模型的工作流配置",
+            "cost_source": str(config_path.relative_to(model_dir)) if config_path and config_path.is_file() else "未找到该模型的工作流配置",
             "stamp_duty_assumption": "本模型未单独记录，无法从卖出总成本中拆分",
         },
         "folds": folds,

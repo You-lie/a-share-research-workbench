@@ -1661,7 +1661,7 @@ function updateQlibModelActions() {
   const select = document.getElementById('qlibModelSelect');
   const selected = Boolean(select.value);
   const selectedOption = select.options[select.selectedIndex];
-  const readyForInference = selected && selectedOption?.dataset.hasScores === 'true';
+  const readyForInference = selected && selectedOption?.dataset.inferReady === 'true';
   document.getElementById('qlibDeleteModelBtn').disabled = !selected;
   document.getElementById('qlibInferBtn').disabled = !readyForInference;
   if (selected) loadQlibBacktest(select.value);
@@ -1750,8 +1750,8 @@ async function loadQlibModels(preferredModel = '') {
     models.forEach(m => {
       const opt = document.createElement('option');
       opt.value = m.name;
-      opt.dataset.hasScores = String(Boolean(m.has_scores));
-      opt.textContent = `${m.name} (${m.market.toUpperCase()} · ${m.has_scores ? '可推理' : '未完成'})`;
+      opt.dataset.inferReady = String(Boolean(m.infer_ready));
+      opt.textContent = `${m.name} (${m.market.toUpperCase()} · ${m.infer_ready ? '可推理' : '未完成'})`;
       sel.appendChild(opt);
     });
     if (models.length === 0) {

@@ -22,7 +22,7 @@
 前提：已安装 Git、Conda 和 Python 3.11。
 
 ```powershell
-git clone <你的 GitHub 仓库地址>
+git clone https://github.com/You-lie/a-share-research-workbench.git
 Set-Location stock-fish
 Copy-Item .env.example .env
 
@@ -106,7 +106,7 @@ stock-fish/
 └── data/                     # 本地运行数据，默认不提交
 ```
 
-## 上游项目与署名
+## 上游项目与致谢
 
 这是一个面向本地 Windows 使用的**二次开发版本**，在上游基础上重新整理了运行方式、数据安全、Qlib 本地工作流、数据溯源、纸面组合和推演历史。
 
@@ -117,15 +117,18 @@ stock-fish/
 
 详见 [NOTICE.md](NOTICE.md)。二次开发不等于原作；请在再分发时保留上游署名和许可信息。
 
-## 许可证说明
+## 开源许可证
 
-上游 StockFish 发布版本带有 MIT 许可证，已在 [NOTICE.md](NOTICE.md) 中保留原始版权和许可文本。当前仓库集成的 `MiroFish/backend` 在其 `pyproject.toml` 中声明为 **AGPL-3.0**。
+本项目采用 [GNU Affero General Public License v3.0](LICENSE)（AGPL-3.0）开源。
 
-因此，**不要把整个组合仓库标记为 MIT-only**。公开发布、再分发或接受外部贡献前，请由仓库维护者添加与 AGPL-3.0 兼容的顶层许可证和完整许可证文本，并保留所有第三方通知。
+### 第三方许可
 
-## 风险提示
+上游 StockFish 发布版本带有 MIT 许可证，原始版权和许可文本保留在 [NOTICE.md](NOTICE.md)。本仓库集成的 `MiroFish/backend` 在其 `pyproject.toml` 中声明为 **AGPL-3.0**。
 
-- 所有行情、财务和新闻数据都可能延迟、缺失或来自备用来源。
-- Qlib 回测只是历史样本外研究，不代表未来或实盘收益。
-- MiroFish、LLM 和投资风格输出是辅助研究观点，不是交易指令。
-- 所有实际买卖、仓位、止损和风险承担都由使用者自行决定。
+请在使用、修改或再分发相关组件时遵守其适用的许可证条款，并保留原始版权与通知。
+
+## 使用边界
+
+- 本项目仅用于研究与辅助决策，不连接券商，也不会自动下单。
+- 数据可能延迟、缺失或来自备用来源；请以数据溯源面板显示的口径和时间为准。
+- Qlib 回测、LLM 结论和情景推演均不代表未来或实盘收益。

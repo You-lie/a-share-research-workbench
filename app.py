@@ -113,6 +113,17 @@ def _qlib_models_path() -> Path:
     return _get_qlib_runtime_paths()["model_dir"]
 
 
+def _qlib_model_infer_ready(model_dir: Path) -> bool:
+    """A model is inferable only after a walk-forward fold saved its parameters."""
+    walk_forward_dir = model_dir / "model_predict" / "walk_forward"
+    if not walk_forward_dir.is_dir():
+        return False
+    return any(
+        checkpoint.parent.parent.parent.joinpath("workflow_config_practice.yaml").is_file()
+        for checkpoint in walk_forward_dir.glob("*/model_runs/*/mlflow_run/artifacts/params.pkl")
+    )
+
+
 def _sync_qlib_runner_paths(paths: dict[str, Path]) -> None:
     for module_name in ("_data_runner_mod", "_train_runner_mod", "_infer_runner_mod"):
         module = globals().get(module_name)
@@ -1110,7 +1121,8 @@ def qlib_models():
                 market = "csi1000"
 
             date_part = name[:10] if len(name) >= 10 and name[4] == "-" else ""
-            has_scores = (d / "model_predict" / "scores.csv").exists()
+            has_scores = (d / "model_predict" / "scores.csv").is_file()
+            infer_ready = _qlib_model_infer_ready(d)
             is_finetune = "fintune" in name.lower()
 
             models.append({
@@ -1118,6 +1130,7 @@ def qlib_models():
                 "market": market,
                 "date": date_part,
                 "has_scores": has_scores,
+                "infer_ready": infer_ready,
                 "is_finetune": is_finetune,
                 "in_analysis_outputs": True,  # 始终为 True
             })
@@ -1236,7 +1249,7 @@ def qlib_infer():
         return jsonify({'error': '模型路径不合法'}), 400
     if not model_dir.is_dir():
         return jsonify({'error': f'模型不存在: {model}'}), 400
-    if not (model_dir / "model_predict" / "scores.csv").is_file():
+    if not _qlib_model_infer_ready(model_dir):
         return jsonify({'error': '模型训练尚未完成，当前只能删除，不能推理'}), 409
 
     task_id = f"qlib_{uuid.uuid4().hex[:12]}"

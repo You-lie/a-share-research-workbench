@@ -36,6 +36,6 @@ SOFTWARE.
 - [Microsoft Qlib](https://github.com/microsoft/qlib): factor-model research framework used by the optional Qlib workflow.
 - [AkShare](https://github.com/akfamily/akshare) and [Tushare](https://tushare.pro): market-data integrations.
 
-## Maintainer Action Required
+## License Scope
 
-This notice is not a top-level license for the combined repository. Because the bundled MiroFish backend declares AGPL-3.0, the public repository must be published under AGPL-3.0-compatible terms before redistribution or accepting contributions. Do not replace this notice with an MIT-only statement.
+This notice preserves third-party attribution for the combined repository and is not a replacement for the applicable component licenses. The bundled MiroFish backend declares AGPL-3.0; retain the original copyright and license notices when using or redistributing the relevant code.

@@ -22,7 +22,7 @@ StockFish is a local-first A-share research and decision-support workspace. It c
 Prerequisites: Git, Conda, and Python 3.11.
 
 ```powershell
-git clone <your GitHub repository URL>
+git clone https://github.com/You-lie/a-share-research-workbench.git
 Set-Location stock-fish
 Copy-Item .env.example .env
 
@@ -63,12 +63,18 @@ This is a local-first derivative of [freenowill/stock-fish](https://github.com/f
 
 It also integrates [MiroFish](https://github.com/666ghj/MiroFish), [Microsoft Qlib](https://github.com/microsoft/qlib), [AkShare](https://github.com/akfamily/akshare), and [Tushare](https://tushare.pro). See [NOTICE.md](NOTICE.md) for details.
 
-## License Status
+## License
+
+This project is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).
+
+### Third-Party Licenses
 
 The upstream StockFish release carried an MIT license, reproduced in [NOTICE.md](NOTICE.md). The bundled `MiroFish/backend` declares AGPL-3.0 in its own `pyproject.toml`.
 
-Do not label this combined repository as MIT-only. Before public redistribution or accepting contributions, the maintainer must add a top-level license compatible with AGPL-3.0 and preserve all upstream notices.
+Use, modification, and redistribution of each component remain subject to its applicable license. Preserve the original copyright and licensing notices.
 
-## Risk Disclaimer
+## Usage Scope
 
-All market data may be delayed, incomplete, cached, or sourced from a fallback provider. Qlib backtests, LLM conclusions, and MiroFish simulations are historical or synthetic research aids only. The user remains fully responsible for all real investment decisions.
+- This project is for research and decision support only. It does not connect to brokers or place orders.
+- Market data may be delayed, incomplete, cached, or sourced from a fallback provider. Consult the displayed provenance and timestamp.
+- Qlib backtests, LLM conclusions, and MiroFish simulations do not represent future or live-trading returns.

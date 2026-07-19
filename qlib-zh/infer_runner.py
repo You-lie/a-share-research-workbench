@@ -30,10 +30,27 @@ from local_runtime import (
 )
 
 
+def _safe_console_print(message: str) -> None:
+    """Keep the standalone CLI usable in Windows terminals with a GBK codec."""
+    try:
+        print(message, file=sys.stderr)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stderr, "encoding", None) or "utf-8"
+        safe_message = message.encode(encoding, errors="replace").decode(encoding)
+        print(safe_message, file=sys.stderr)
+
+
 def _resolve_model(model_name: str) -> dict:
     """根据模型名称解析 market / 脚本 / YAML 模板."""
     name_lower = model_name.lower()
 
+    if "csi500" in name_lower:
+        return {
+            "market": "csi500",
+            "benchmark": "SH000905",
+            "script": PROJECT_ROOT / "scripts" / "small" / "run_stage2_walk_forward_csi500.py",
+            "template": PROJECT_ROOT / "scripts" / "small" / "templates" / "workflow_config_lightgbm_Alpha158_csi500.yaml",
+        }
     if "csi1000" in name_lower:
         return {
             "market": "csi1000",
@@ -336,7 +353,7 @@ if __name__ == "__main__":
 
     def _print_progress(data):
         msg = data.get("message", "")
-        print(f"[qlib] {msg}", file=sys.stderr)
+        _safe_console_print(f"[qlib] {msg}")
 
     result = run_inference(args.model, top_n=args.top_n, progress_callback=_print_progress)
 
