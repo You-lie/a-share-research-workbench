@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -96,6 +97,15 @@ class PaperPortfolioStore:
             values = {row["key"]: row["value"] for row in connection.execute("SELECT key, value FROM settings")}
         return {key: float(values.get(key, default)) for key, default in DEFAULT_SETTINGS.items()}
 
+    @staticmethod
+    def _normalize_trade_at(value: Any) -> str:
+        raw = str(value or datetime.now().strftime("%Y-%m-%dT%H:%M")).strip()
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("成交时间格式不正确") from exc
+        return parsed.replace(second=0, microsecond=0).isoformat(timespec="minutes")
+
     def update_settings(self, payload: dict) -> dict:
         values = self.get_settings()
         for key in DEFAULT_SETTINGS:
@@ -105,11 +115,12 @@ class PaperPortfolioStore:
                 parsed = float(payload[key])
             except (TypeError, ValueError) as exc:
                 raise ValueError(f"{key} 必须是数字") from exc
-            if parsed < 0:
+            if not math.isfinite(parsed) or parsed < 0:
                 raise ValueError(f"{key} 不能小于 0")
             if key.endswith("rate") and parsed > 0.1:
                 raise ValueError(f"{key} 不能超过 10%")
             values[key] = parsed
+        self._ledger(self._active_trades(), values["initial_cash"], enforce_cash=True)
         now = datetime.now().isoformat()
         with self._lock, self._connection() as connection:
             for key, value in values.items():
@@ -137,10 +148,15 @@ class PaperPortfolioStore:
         return result
 
     @staticmethod
-    def _ledger(trades: list[dict], initial_cash: float) -> tuple[float, dict[str, dict]]:
+    def _ledger(
+        trades: list[dict], initial_cash: float, *, enforce_cash: bool = False
+    ) -> tuple[float, dict[str, dict]]:
         cash = float(initial_cash)
         positions: dict[str, dict] = {}
-        for trade in trades:
+        ordered_trades = sorted(
+            trades, key=lambda trade: (str(trade.get("trade_at") or ""), int(trade.get("id") or 0))
+        )
+        for trade in ordered_trades:
             symbol = trade["symbol"]
             position = positions.setdefault(symbol, {
                 "symbol": symbol, "name": trade["name"], "quantity": 0,
@@ -151,6 +167,11 @@ class PaperPortfolioStore:
             costs = float(trade["commission"]) + float(trade["stamp_duty"])
             if trade["action"] in BUY_ACTIONS:
                 cash -= amount + costs
+                if enforce_cash and cash < -1e-8:
+                    raise ValueError(
+                        f"交易时间 {trade.get('trade_at', '')} 的可用资金不足；"
+                        "请先更正或撤销依赖这笔资金的后续流水"
+                    )
                 position["quantity"] += quantity
                 position["cost_basis"] += amount + costs
             else:
@@ -190,13 +211,19 @@ class PaperPortfolioStore:
             price = float(payload.get("price"))
         except (TypeError, ValueError) as exc:
             raise ValueError("成交价必须是正数") from exc
-        if price <= 0:
+        if not math.isfinite(price) or price <= 0:
             raise ValueError("成交价必须是正数")
         settings = self.get_settings()
-        cash, positions = self._ledger(active_trades, settings["initial_cash"])
+        trade_at = self._normalize_trade_at(payload.get("trade_at"))
+        preceding_trades = [
+            trade for trade in active_trades if str(trade.get("trade_at") or "") <= trade_at
+        ]
+        cash, positions = self._ledger(
+            preceding_trades, settings["initial_cash"], enforce_cash=True
+        )
         current_quantity = positions.get(symbol, {}).get("quantity", 0)
         raw_quantity = payload.get("quantity")
-        if action == "clear" and raw_quantity in (None, "", 0, "0"):
+        if action == "clear":
             quantity = current_quantity
         else:
             try:
@@ -219,8 +246,7 @@ class PaperPortfolioStore:
         analysis_snapshot = payload.get("analysis_snapshot") or {}
         if not isinstance(analysis_snapshot, dict):
             raise ValueError("分析快照格式不正确")
-        trade_at = str(payload.get("trade_at") or datetime.now().strftime("%Y-%m-%dT%H:%M"))
-        return {
+        prepared = {
             "trade_at": trade_at,
             "symbol": symbol,
             "name": str(payload.get("name") or ""),
@@ -234,6 +260,13 @@ class PaperPortfolioStore:
             "note": str(payload.get("note") or "")[:2000],
             "analysis_snapshot": analysis_snapshot,
         }
+        trial_id = max((int(trade.get("id") or 0) for trade in active_trades), default=0) + 1
+        self._ledger(
+            [*active_trades, {**prepared, "id": trial_id}],
+            settings["initial_cash"],
+            enforce_cash=True,
+        )
+        return prepared
 
     @staticmethod
     def _insert_trade(connection: sqlite3.Connection, prepared: dict, correction_of: Optional[int] = None) -> int:
@@ -254,9 +287,10 @@ class PaperPortfolioStore:
         return int(cursor.lastrowid)
 
     def create_trade(self, payload: dict) -> dict:
-        prepared = self._prepare_trade(payload, self._active_trades())
-        with self._lock, self._connection() as connection:
-            trade_id = self._insert_trade(connection, prepared)
+        with self._lock:
+            prepared = self._prepare_trade(payload, self._active_trades())
+            with self._connection() as connection:
+                trade_id = self._insert_trade(connection, prepared)
         return self.get_trade(trade_id)
 
     def get_trade(self, trade_id: int) -> dict:
@@ -270,6 +304,12 @@ class PaperPortfolioStore:
         trade = self.get_trade(trade_id)
         if trade["status"] != "active":
             raise ValueError("该交易已经撤销")
+        active_without_trade = [
+            item for item in self._active_trades() if item["id"] != trade_id
+        ]
+        self._ledger(
+            active_without_trade, self.get_settings()["initial_cash"], enforce_cash=True
+        )
         with self._lock, self._connection() as connection:
             later = connection.execute(
                 "SELECT 1 FROM trades WHERE symbol = ? AND status = 'active' AND (trade_at > ? OR (trade_at = ? AND id > ?)) LIMIT 1",

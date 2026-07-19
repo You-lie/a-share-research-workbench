@@ -2970,12 +2970,12 @@ function renderQualityPick(pick) {
   if (!best) return '';
 
   let html = '<div class="batch-quality-section">';
-  html += '<div class="section-title">⭐ 优质股票推荐</div>';
+  html += '<div class="section-title">优先研究候选</div>';
   html += '<div class="batch-quality-card">';
 
   // Best stock
   html += '<div class="batch-best-stock">';
-  html += '<div class="batch-best-badge">🏆 最值得买入</div>';
+  html += '<div class="batch-best-badge">当前优先研究</div>';
   html += `<div style="font-size:20px;font-weight:700;color:#fff;margin-bottom:6px;">${best.name || best.symbol} (${best.symbol})</div>`;
   if (best.suggested_action) {
     const actCls = best.suggested_action.includes('买')||best.suggested_action.includes('加') ? 'positive' : 'neutral';
@@ -3125,10 +3125,12 @@ function renderMasterDecision(pred) {
   // Order
   const order = cio.order || {};
   if (order.action) {
+    const hasPositionSize = order.position_size_pct !== null && order.position_size_pct !== undefined && Number.isFinite(Number(order.position_size_pct));
+    const positionSizeText = hasPositionSize ? `${Number(order.position_size_pct).toFixed(1)}%` : '未提供';
     html += '<div class="cio-section"><div class="cio-section-title">操作指令</div>';
     html += '<div class="cio-order">';
     html += '<div class="cio-order-item"><div class="label">操作</div><div style="font-size:20px;font-weight:700;" class="' + (order.action.includes('买')||order.action.includes('加')?'positive':order.action.includes('卖')||order.action.includes('减')?'negative':'neutral') + '">' + order.action + '</div></div>';
-    html += '<div class="cio-order-item"><div class="label">目标仓位</div><div style="font-size:18px;font-weight:600;color:#ffa502;">' + (order.position_size_pct || 0) + '%</div></div>';
+    html += '<div class="cio-order-item"><div class="label">目标仓位</div><div style="font-size:18px;font-weight:600;color:#ffa502;">' + positionSizeText + '</div></div>';
     if (order.stop_loss && order.stop_loss.level) {
       html += '<div class="cio-order-item"><div class="label">止损</div><div style="font-size:18px;font-weight:600;color:#00d4aa;">¥' + (typeof order.stop_loss === "object" ? order.stop_loss.level.toFixed(1) : order.stop_loss) + '</div></div>';
     }

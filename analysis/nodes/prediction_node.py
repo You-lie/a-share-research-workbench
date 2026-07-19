@@ -102,6 +102,55 @@ class PredictionNode:
         return 1 if change_pct > 0 else -1 if change_pct < 0 else 0
 
     @classmethod
+    def _quote_is_actionable(cls, state: dict, quote: dict, price: Optional[float]) -> tuple[bool, str]:
+        """A trading suggestion needs a real, usable reference price."""
+        if price is None or price <= 0:
+            return False, "未取得有效现价"
+
+        source = str(quote.get('source') or '').strip().lower() if isinstance(quote, dict) else ''
+        if source in {'mock', '模拟数据'}:
+            return False, "行情为模拟数据"
+
+        provenance = state.get('data_provenance') if isinstance(state, dict) else None
+        if not isinstance(provenance, dict):
+            return True, ''
+        sections = provenance.get('sections') or {}
+        quote_meta = sections.get('quote') if isinstance(sections, dict) else {}
+        status = str((quote_meta or {}).get('status') or '').strip().lower()
+        if status in {'mock', 'unavailable'}:
+            return False, "行情数据不可用" if status == 'unavailable' else "行情为模拟数据"
+        return True, ''
+
+    @classmethod
+    def _sanitize_position_size(
+        cls, state: dict, action: str, raw_position_size: Any
+    ) -> tuple[Optional[float], str]:
+        """Validate a CIO target weight against the supplied account constraints."""
+        if action not in {'买入', '加仓', '持有'}:
+            return None, ''
+
+        target = cls._finite_number(raw_position_size)
+        if target is None:
+            return None, ''
+        if target < 0:
+            return None, '目标仓位无效，已隐藏'
+
+        cap = 100.0
+        quote = state.get('quote', {}) if isinstance(state, dict) else {}
+        price = cls._finite_number(quote.get('price') if isinstance(quote, dict) else None) or 0.0
+        shares = cls._finite_number(state.get('shares') if isinstance(state, dict) else None) or 0.0
+        total_assets = cls._finite_number(state.get('total_assets') if isinstance(state, dict) else None) or 0.0
+        available_cash = cls._finite_number(state.get('available_cash') if isinstance(state, dict) else None)
+        if total_assets > 0 and available_cash is not None and available_cash >= 0:
+            max_affordable = (shares * price + available_cash) / total_assets * 100
+            cap = min(cap, max(0.0, max_affordable))
+
+        sanitized = min(target, cap)
+        if target > cap:
+            return round(sanitized, 1), f'目标仓位超过资金约束，已限制为 {sanitized:.1f}%'
+        return round(sanitized, 1), ''
+
+    @classmethod
     def _apply_decision_guardrails(cls, state: dict, payload: dict) -> dict:
         """Keep model output as research, but reject contradictory trade instructions."""
         result = dict(payload or {})
@@ -126,6 +175,7 @@ class PredictionNode:
 
         quote = state.get('quote', {}) if isinstance(state, dict) else {}
         price = cls._finite_number(quote.get('price') if isinstance(quote, dict) else None)
+        quote_is_actionable, quote_reason = cls._quote_is_actionable(state, quote, price)
         shares = cls._finite_number(state.get('shares') if isinstance(state, dict) else None) or 0
         has_position = shares > 0
 
@@ -139,7 +189,10 @@ class PredictionNode:
 
         short_direction = cls._forecast_direction(short_term)
         mid_direction = cls._forecast_direction(mid_term)
-        if action in {'买入', '加仓'} and (
+        if action != '观望' and not quote_is_actionable:
+            action = '观望'
+            notes.append(f'{quote_reason}，不能给出操作建议，已改为观望')
+        elif action in {'买入', '加仓'} and (
             outlook != '看多' or short_direction < 0 or mid_direction < 0
         ):
             action = '观望'
@@ -374,8 +427,12 @@ class PredictionNode:
         # aligned with the guarded summary so two parts of one report cannot
         # show conflicting trade instructions.
         guarded_order = dict(order)
+        position_size_pct, position_note = self._sanitize_position_size(
+            state, guarded['suggested_action']['action'], order.get('position_size_pct')
+        )
         guarded_order.update({
             'action': guarded['suggested_action']['action'],
+            'position_size_pct': position_size_pct,
             'entry_conditions': guarded['suggested_action']['reason'],
             'stop_loss': {
                 **(order.get('stop_loss') if isinstance(order.get('stop_loss'), dict) else {}),
@@ -386,6 +443,10 @@ class PredictionNode:
                 'level_1': guarded['suggested_action']['take_profit'] or 0,
             },
         })
+        if position_note:
+            existing_note = str(guarded_order.get('position_note') or '').strip()
+            guarded_order['position_note'] = f'{existing_note}；系统校验：{position_note}'.strip('；')
+            guarded['confidence'] = '低'
         cio_decision.order = guarded_order
 
         result = PredictionResult(

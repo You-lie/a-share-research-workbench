@@ -3,6 +3,8 @@ import unittest
 
 from analysis.agent import StockAnalysisAgent
 from analysis.agents.base import CIODecision
+from analysis.agents.cio import CIOAgent
+from analysis.batch_analyzer import BatchAnalyzer
 from analysis.nodes.prediction_node import PredictionNode
 from analysis.scoring import ScoringEngine
 from analysis.state.state import AnalysisState
@@ -48,6 +50,38 @@ class DecisionGuardrailTests(unittest.TestCase):
 
         self.assertEqual(result["suggested_action"]["action"], "观望")
 
+    def test_buy_requires_a_usable_quote(self):
+        result = PredictionNode._apply_decision_guardrails(
+            {
+                "quote": {},
+                "data_provenance": {"sections": {"quote": {"status": "unavailable"}}},
+            },
+            {
+                "outlook": "看多",
+                "short_term": {"direction": "上涨", "change_pct": 2},
+                "mid_term": {"direction": "上涨", "change_pct": 4},
+                "suggested_action": {"action": "买入"},
+            },
+        )
+
+        self.assertEqual(result["suggested_action"]["action"], "观望")
+
+    def test_mock_quote_requires_observe(self):
+        result = PredictionNode._apply_decision_guardrails(
+            {
+                "quote": {"price": 100, "source": "mock"},
+                "data_provenance": {"sections": {"quote": {"status": "mock"}}},
+            },
+            {
+                "outlook": "看多",
+                "short_term": {"direction": "上涨", "change_pct": 2},
+                "mid_term": {"direction": "上涨", "change_pct": 4},
+                "suggested_action": {"action": "买入"},
+            },
+        )
+
+        self.assertEqual(result["suggested_action"]["action"], "观望")
+
     def test_master_output_is_replaced_with_the_guarded_action(self):
         decision = CIODecision(
             short_term={"direction": "下跌", "change_pct": -2},
@@ -62,6 +96,64 @@ class DecisionGuardrailTests(unittest.TestCase):
 
         self.assertEqual(result.suggested_action["action"], "观望")
         self.assertEqual(decision.order["action"], "观望")
+
+    def test_master_position_is_limited_by_available_cash(self):
+        decision = CIODecision(
+            short_term={"direction": "上涨", "change_pct": 2},
+            mid_term={"direction": "上涨", "change_pct": 4},
+            long_term={"direction": "上涨", "change_pct": 6},
+            order={"action": "买入", "position_size_pct": 100},
+            decision_quality={"confidence": "中"},
+        )
+        node = PredictionNode.__new__(PredictionNode)
+
+        node._build_master_result(
+            {
+                "quote": {"price": 100},
+                "shares": 0,
+                "total_assets": 1000,
+                "available_cash": 200,
+            },
+            decision,
+            [],
+        )
+
+        self.assertEqual(decision.order["position_size_pct"], 20.0)
+
+
+class BatchGuardrailTests(unittest.TestCase):
+    def test_batch_buy_cannot_override_single_stock_observe(self):
+        analyzer = BatchAnalyzer.__new__(BatchAnalyzer)
+        results = [{
+            "symbol": "600001",
+            "data": {
+                "quote": {"price": 10, "source": "akshare"},
+                "data_provenance": {"sections": {"quote": {"status": "fresh"}}},
+                "prediction_summary": {
+                    "outlook": "看空",
+                    "short_term": {"direction": "下跌"},
+                    "mid_term": {"direction": "下跌"},
+                    "suggested_action": {"action": "观望"},
+                },
+                "shares": 0,
+            },
+        }]
+
+        guarded = analyzer._guard_quality_pick(
+            {
+                "best_stock": {
+                    "symbol": "600001", "suggested_action": "买入",
+                    "suggested_position_pct": 80, "reasons": [],
+                },
+                "selection_rationale": "示例",
+            },
+            results,
+            total_assets=1000,
+            available_cash=500,
+        )
+
+        self.assertEqual(guarded["best_stock"]["suggested_action"], "观望")
+        self.assertEqual(guarded["best_stock"]["suggested_position_pct"], 0)
 
 
 class ScoringAvailabilityTests(unittest.TestCase):
@@ -115,6 +207,27 @@ class PePercentileTests(unittest.TestCase):
         percentile = StockAnalysisAgent._pe_percentile([10.0] * 39 + [500.0], 10.0)
 
         self.assertAlmostEqual(percentile, 48.75)
+
+
+class ScenarioProbabilityTests(unittest.TestCase):
+    def test_scenario_probabilities_are_normalized(self):
+        agent = CIOAgent.__new__(CIOAgent)
+        decision = agent._parse_cio_result(
+            {
+                "base_case": {"probability": 0.6},
+                "bull_case": {"probability": 0.6},
+                "bear_case": {"probability": 0.3},
+                "decision_quality": {"confidence": "高"},
+            },
+            {"name": "测试", "key": "test"},
+        )
+
+        total = sum(
+            case["probability"]
+            for case in (decision.base_case, decision.bull_case, decision.bear_case)
+        )
+        self.assertAlmostEqual(total, 1.0, places=3)
+        self.assertEqual(decision.decision_quality["confidence"], "低")
 
 
 if __name__ == "__main__":

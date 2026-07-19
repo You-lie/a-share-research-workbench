@@ -310,13 +310,14 @@ def run_inference(
 
         keep_list = []
         sell_list = []
+        uncovered_list = []
         for h in holding_codes:
             rank = rank_map.get(h, 999999)
             if h in vetoed_codes:
                 sell_list.append({"stock": h, "reason": "Strategy B 否决"})
             elif rank >= 999999:
-                sell_list.append({"stock": h,
-                    "reason": f"不在模型覆盖范围 (数据缺失或未纳入成分股)"})
+                uncovered_list.append({"stock": h,
+                    "reason": "不在模型覆盖范围，模型不提供持有或卖出结论"})
             elif rank > keep_rank_cutoff:
                 sell_list.append({"stock": h,
                     "reason": f"排名 {rank}/{total_universe} > 阈值 {keep_rank_cutoff}"})
@@ -338,8 +339,12 @@ def run_inference(
 
         strategy_b_result["keep"] = keep_list
         strategy_b_result["sell"] = sell_list
+        strategy_b_result["uncovered"] = uncovered_list
         strategy_b_result["model_candidates"] = candidate_list
-        _log(f"调仓候选: keep={len(keep_list)}, sell={len(sell_list)}, candidates={len(candidate_list)}")
+        _log(
+            f"调仓候选: keep={len(keep_list)}, sell={len(sell_list)}, "
+            f"uncovered={len(uncovered_list)}, candidates={len(candidate_list)}"
+        )
 
     result = {
         "stocks": "/".join(stocks),

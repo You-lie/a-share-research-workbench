@@ -14,6 +14,7 @@ CIO Agent — 最终决策人执行器
     # decision 是 CIODecision 实例
 """
 import json
+import math
 from typing import Optional, Dict, List
 from loguru import logger
 
@@ -294,12 +295,51 @@ class CIOAgent(BaseAgent):
             evidence_chain = evidence_chain[:EXPECTED_EMPLOYEES]
 
         # ── 校验 2: scenario probability 之和必须为 1.0 ──
+        scenario_warning = ""
+        scenario_cases = []
         for case_key in ('base_case', 'bull_case', 'bear_case'):
             case = result.get(case_key)
             if case and isinstance(case, dict):
-                prob = case.get('probability')
-                if prob is not None and (prob < 0 or prob > 1):
-                    logger.warning(f"CIO {case_key}.probability={prob} 超出 [0,1] 范围")
+                copied_case = dict(case)
+                result[case_key] = copied_case
+                try:
+                    prob = float(copied_case.get('probability'))
+                except (TypeError, ValueError):
+                    prob = None
+                if prob is None or not math.isfinite(prob) or prob < 0 or prob > 1:
+                    copied_case['probability'] = None
+                    scenario_warning = '情景概率缺失或超出范围，不能作为概率判断依据'
+                else:
+                    copied_case['probability'] = prob
+                    scenario_cases.append(copied_case)
+        if len(scenario_cases) == 3 and not scenario_warning:
+            probability_total = sum(case['probability'] for case in scenario_cases)
+            if probability_total <= 0:
+                for case in scenario_cases:
+                    case['probability'] = None
+                scenario_warning = '三种情景概率之和为 0，不能作为概率判断依据'
+            elif not math.isclose(probability_total, 1.0, abs_tol=0.01):
+                for case in scenario_cases:
+                    case['probability'] = round(case['probability'] / probability_total, 4)
+                scenario_warning = '三种情景概率已按总和归一化，原始概率不一致'
+        elif any(result.get(key) for key in ('base_case', 'bull_case', 'bear_case')) and not scenario_warning:
+            scenario_warning = '三种情景概率不完整，不能作为概率判断依据'
+
+        if scenario_warning and '归一化' not in scenario_warning:
+            for case_key in ('base_case', 'bull_case', 'bear_case'):
+                case = result.get(case_key)
+                if isinstance(case, dict):
+                    case['probability'] = None
+
+        decision_quality = result.get('decision_quality')
+        decision_quality = dict(decision_quality) if isinstance(decision_quality, dict) else {}
+        if scenario_warning:
+            uncertainties = decision_quality.get('key_uncertainties')
+            uncertainties = list(uncertainties) if isinstance(uncertainties, list) else []
+            if scenario_warning not in uncertainties:
+                uncertainties.append(scenario_warning)
+            decision_quality['key_uncertainties'] = uncertainties
+            decision_quality['confidence'] = '低'
 
         return CIODecision(
             master_name=master_info['name'],
@@ -315,7 +355,7 @@ class CIOAgent(BaseAgent):
             mid_term=result.get('mid_term'),
             long_term=result.get('long_term'),
             risk_monitoring=result.get('risk_monitoring', []),
-            decision_quality=result.get('decision_quality'),
+            decision_quality=decision_quality or None,
             veto_response=result.get('veto_response', ''),
             extraordinary_items_note=result.get('extraordinary_items_note', ''),
             raw_llm_output=json.dumps(result, ensure_ascii=False),

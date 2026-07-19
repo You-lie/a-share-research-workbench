@@ -17,6 +17,7 @@ Batch Stock Analyzer — 批量股票分析编排器
     )
 """
 import json
+import math
 import os
 import uuid
 from datetime import datetime
@@ -33,6 +34,116 @@ class BatchAnalyzer:
     def __init__(self):
         self._agent = StockAnalysisAgent()
         self._cache_dir = Path(__file__).resolve().parent.parent / 'data' / 'outputs' / 'batch'
+
+    @staticmethod
+    def _quote_is_usable(result: dict) -> bool:
+        quote = result.get('quote') or {}
+        try:
+            price = float(quote.get('price') or 0)
+            if not math.isfinite(price) or price <= 0:
+                return False
+        except (TypeError, ValueError):
+            return False
+        if str(quote.get('source') or '').strip().lower() in {'mock', '模拟数据'}:
+            return False
+        provenance = result.get('data_provenance') or {}
+        sections = provenance.get('sections') if isinstance(provenance, dict) else {}
+        quote_meta = sections.get('quote') if isinstance(sections, dict) else {}
+        return str((quote_meta or {}).get('status') or '').lower() not in {'mock', 'unavailable'}
+
+    @staticmethod
+    def _direction_is_bearish(forecast: dict) -> bool:
+        if not isinstance(forecast, dict):
+            return False
+        if str(forecast.get('direction') or '').strip() == '下跌':
+            return True
+        try:
+            return float(forecast.get('change_pct')) < 0
+        except (TypeError, ValueError):
+            return False
+
+    def _guard_quality_pick(
+        self,
+        pick: Optional[Dict],
+        results: List[Dict],
+        total_assets: float,
+        available_cash: float,
+    ) -> Optional[Dict]:
+        """Do not let a batch-only LLM override each stock's guarded conclusion."""
+        if not isinstance(pick, dict):
+            return None
+        guarded = dict(pick)
+        best = guarded.get('best_stock')
+        if not isinstance(best, dict):
+            guarded['best_stock'] = None
+            return guarded
+
+        by_symbol = {str(item.get('symbol') or ''): item.get('data') or {} for item in results}
+        symbol = str(best.get('symbol') or '').strip()
+        stock_result = by_symbol.get(symbol)
+        if not stock_result:
+            guarded['best_stock'] = None
+            guarded['runner_up'] = None
+            guarded['selection_rationale'] = '批量候选未对应到有效单股分析，未提供研究候选。'
+            return guarded
+
+        prediction = stock_result.get('prediction_summary') or {}
+        single_action = (prediction.get('suggested_action') or {}).get('action')
+        requested_action = str(best.get('suggested_action') or '观望').strip()
+        requested_action = {'减仓': '减持'}.get(requested_action, requested_action)
+        action = requested_action if requested_action in {'买入', '加仓', '观望'} else '观望'
+        notes = []
+
+        if action in {'买入', '加仓'}:
+            if single_action not in {'买入', '加仓'}:
+                notes.append('单股结论未通过买入护栏')
+            if prediction.get('outlook') != '看多':
+                notes.append('单股综合方向不是看多')
+            if self._direction_is_bearish(prediction.get('short_term') or {}):
+                notes.append('短期预测偏弱')
+            if self._direction_is_bearish(prediction.get('mid_term') or {}):
+                notes.append('中期预测偏弱')
+            if not self._quote_is_usable(stock_result):
+                notes.append('当前行情不可用或为模拟数据')
+            try:
+                shares = float(stock_result.get('shares') or 0)
+            except (TypeError, ValueError):
+                shares = 0.0
+            if action == '加仓' and shares <= 0:
+                notes.append('未记录该股持仓，不能给出加仓建议')
+        if notes:
+            action = '观望'
+
+        normalized_best = dict(best)
+        normalized_best['suggested_action'] = action
+        if action == '观望':
+            normalized_best['suggested_position_pct'] = 0
+        else:
+            try:
+                requested_pct = float(normalized_best.get('suggested_position_pct') or 0)
+            except (TypeError, ValueError):
+                requested_pct = 0.0
+            if not math.isfinite(requested_pct):
+                requested_pct = 0.0
+            requested_pct = max(0.0, min(100.0, requested_pct))
+            try:
+                quote_price = float((stock_result.get('quote') or {}).get('price') or 0)
+                shares = float(stock_result.get('shares') or 0)
+            except (TypeError, ValueError):
+                quote_price = 0.0
+                shares = 0.0
+            if total_assets > 0 and available_cash >= 0 and math.isfinite(quote_price) and quote_price > 0:
+                max_affordable = min(100.0, max(0.0, (shares * quote_price + available_cash) / total_assets * 100))
+                requested_pct = min(requested_pct, max_affordable)
+            normalized_best['suggested_position_pct'] = round(requested_pct, 1)
+        if notes:
+            reasons = normalized_best.get('reasons')
+            reasons = list(reasons) if isinstance(reasons, list) else []
+            reasons.append(f"系统校验：{'；'.join(notes)}，已改为观望")
+            normalized_best['reasons'] = reasons
+
+        guarded['best_stock'] = normalized_best
+        return guarded
 
     # ── 主入口 ──
 
@@ -179,7 +290,12 @@ class BatchAnalyzer:
                     'message': '正在筛选优质股票...',
                 })
 
-            quality_pick = self._pick_best(success_results, master, total_assets, available_cash)
+            quality_pick = self._guard_quality_pick(
+                self._pick_best(success_results, master, total_assets, available_cash),
+                success_results,
+                total_assets,
+                available_cash,
+            )
 
         elif len(success_results) == 1:
             # 只有一只成功，无需批量总结
