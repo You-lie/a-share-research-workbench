@@ -23,7 +23,7 @@
 
 ```powershell
 git clone https://github.com/You-lie/a-share-research-workbench.git
-Set-Location stock-fish
+Set-Location a-share-research-workbench
 Copy-Item .env.example .env
 
 conda create -n stock_quant python=3.11 -y
@@ -38,6 +38,17 @@ conda run -n stock_quant python app.py
 ```
 
 打开 `http://127.0.0.1:8000`。本地 `MIROFISH_AUTO_START=true` 时，StockFish 会自动启动 MiroFish，无需另开终端。
+
+## 验证安装
+
+安装依赖后，可以先运行基础检查，确认当前代码和环境完整：
+
+```powershell
+conda run -n stock_quant python -m unittest discover -s tests -v
+conda run -n stock_quant python -c "import app; print('StockFish import OK')"
+```
+
+测试不需要真实行情或 API Key。两条命令都成功后再启动服务；如果失败，请保留完整错误信息和当前 Git 提交号以便排查。
 
 ## 配置要点
 
@@ -82,7 +93,7 @@ QLIB_PYTHON=C:\path\to\conda\envs\stock_qlib\python.exe
 | 路径 | 内容 |
 | --- | --- |
 | `data/paper_portfolio.db` | 纸面组合的交易、设置和行情快照 |
-| `memory/analysis/` | 单股深度分析 JSON 快照 |
+| `memory/analysis/<股票代码>/` | 单股深度分析 JSON 快照；`memory/analysis/*.py` 是程序源码，会提交到 Git |
 | `data/outputs/reports/` | 智能推演 HTML / JSON 报告与历史入口 |
 | `memory/stocks/`、`memory/cache/data/` | 本地行情、新闻、财务缓存 |
 | `qlib-zh/runtime/`、`qlib-zh/DATA/` | Qlib 数据、MLflow 记录、模型与训练产物 |

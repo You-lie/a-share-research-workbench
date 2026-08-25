@@ -54,6 +54,10 @@
 
 ## Verification / 验证
 
+- After a clean dependency install, `python -c "import app"` must succeed before a change is considered mergeable.
+- 全新安装依赖后，必须确保 `python -c "import app"` 成功，才能认为改动可合并。
+- Run `python -m unittest discover -s tests -v` for every pull request. Tests must not require API keys or live market data.
+- 每个 Pull Request 都必须运行 `python -m unittest discover -s tests -v`；测试不得依赖 API Key 或真实行情。
 - Run `python -m py_compile app.py` after backend changes.
 - 后端修改后运行 `python -m py_compile app.py`。
 - Parse the inline JavaScript in `static/index.html` after frontend changes and visually check light, dark, desktop, and mobile layouts.

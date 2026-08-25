@@ -1,0 +1,49 @@
+name: Baseline CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install root application dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Verify a clean application import
+        run: python -c "import app; print('StockFish import OK')"
+
+      - name: Compile core Python modules
+        run: >-
+          python -m compileall -q
+          app.py config.py config_health.py paper_portfolio.py qlib_backtest.py
+          stock_name_resolver.py analysis market_data memory prediction_report simulation_bridge
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check inline frontend JavaScript syntax
+        run: awk '/<script>/{flag=1;next}/<\/script>/{flag=0}flag' static/index.html | node --check

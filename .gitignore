@@ -88,7 +88,8 @@ wget-log*
 # Memory system (runtime data, regeneratable)
 memory/cache/data/
 memory/stocks/[0-9][0-9][0-9][0-9][0-9][0-9]/
-memory/analysis/
+# Keep the analysis-store source package tracked; ignore only per-symbol snapshots.
+memory/analysis/*/
 memory/masters/records/
 
 # Local credential and certificate exports
