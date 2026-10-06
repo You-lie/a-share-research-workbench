@@ -1,7 +1,7 @@
 """
 Batch Stock Analyzer — 批量股票分析编排器
 
-支持多只股票串行分析、结果缓存、批量总结 + 优质股票推荐。
+支持多只股票并发分析、结果缓存、批量总结 + 优质股票推荐。
 与 app.py 中的 predict 模式一致：后台线程 + 回调更新进度。
 
 用法:
@@ -19,7 +19,9 @@ Batch Stock Analyzer — 批量股票分析编排器
 import json
 import math
 import os
+import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Callable, Any
@@ -31,9 +33,21 @@ from analysis.agent import StockAnalysisAgent
 class BatchAnalyzer:
     """批量股票分析编排器"""
 
-    def __init__(self):
+    def __init__(self, max_concurrency: Optional[int] = None):
         self._agent = StockAnalysisAgent()
         self._cache_dir = Path(__file__).resolve().parent.parent / 'data' / 'outputs' / 'batch'
+        self._max_concurrency = max_concurrency or self._resolve_concurrency()
+
+    @staticmethod
+    def _resolve_concurrency() -> int:
+        """Concurrency for per-stock analysis. Defaults to 5, clamped to 1..8."""
+        raw = os.environ.get('BATCH_CONCURRENCY', '').strip()
+        try:
+            from config import settings
+            value = int(raw or getattr(settings, 'BATCH_CONCURRENCY', 5) or 5)
+        except (TypeError, ValueError, Exception):
+            value = 5
+        return max(1, min(8, value))
 
     @staticmethod
     def _quote_is_usable(result: dict) -> bool:
@@ -159,7 +173,8 @@ class BatchAnalyzer:
         cancel_event=None,
     ) -> Dict:
         """
-        串行执行多只股票分析，每完成一只触发回调。
+        并发执行多只股票分析（默认 5 并发，BATCH_CONCURRENCY 可调），
+        每完成一只触发回调；结果按输入顺序返回。
 
         Args:
             symbols: 股票代码列表
@@ -204,65 +219,91 @@ class BatchAnalyzer:
         task_cache_dir = self._cache_dir / task_id
         task_cache_dir.mkdir(parents=True, exist_ok=True)
 
-        all_results = []
-        for i, symbol in enumerate(symbols):
-            if _cancelled():
-                return _cancelled_result()
+        results_by_index: Dict[int, Dict] = {}
+        completed_count = 0
+        started_count = 0
+        counter_lock = threading.Lock()
 
-            # 通知开始
+        def _analyze_one(index: int, symbol: str) -> None:
+            """Run one stock analysis and record the outcome (worker thread)."""
+            nonlocal started_count
+            if _cancelled():
+                return
+            with counter_lock:
+                started_count += 1
+                start_number = started_count
             if progress_callback:
                 progress_callback('progress', {
-                    'current': i + 1, 'total': total, 'symbol': symbol,
-                    'message': f'正在分析 [{symbol}] ({i+1}/{total})...',
+                    'current': start_number, 'total': total, 'symbol': symbol,
+                    'message': f'正在分析 [{symbol}] ({start_number}/{total})...',
                 })
-
-            # 执行分析
+            cost = float(cost_prices[index]) if index < len(cost_prices) else 0.0
+            shares = int(shares_list[index]) if index < len(shares_list) else 0
             try:
-                cost = float(cost_prices[i]) if i < len(cost_prices) else 0.0
-                shares = int(shares_list[i]) if i < len(shares_list) else 0
-
                 result = self._agent.analyze(
                     symbol, cost_price=cost, master=master,
                     shares=shares, total_assets=total_assets,
                     available_cash=available_cash, cancel_event=cancel_event,
                 )
-
-                if _cancelled() or result.get('status') == 'cancelled':
-                    return _cancelled_result()
-
-                # 缓存结果
-                cache_path = task_cache_dir / f'{symbol}.json'
-                with open(cache_path, 'w', encoding='utf-8') as f:
-                    json.dump(result, f, ensure_ascii=False, indent=2)
-
-                all_results.append({
+                if result.get('status') != 'cancelled':
+                    cache_path = task_cache_dir / f'{symbol}.json'
+                    with open(cache_path, 'w', encoding='utf-8') as f:
+                        json.dump(result, f, ensure_ascii=False, indent=2)
+                results_by_index[index] = {
                     'symbol': symbol,
                     'status': result.get('status', 'complete'),
                     'data': result,
-                })
-
-                if progress_callback:
-                    status = result.get('status', 'complete')
-                    progress_callback('stock_result', {
-                        'current': i + 1, 'total': total,
-                        'symbol': symbol, 'data': result,
-                        'message': f'[{symbol}] 分析完成 ({status})',
-                    })
-
+                }
             except Exception as e:
                 logger.error(f"[{symbol}] 批量分析失败: {e}")
-                error_result = {
+                results_by_index[index] = {
                     'symbol': symbol, 'status': 'error',
                     'error': str(e),
                 }
-                all_results.append(error_result)
 
-                if progress_callback:
-                    progress_callback('stock_result', {
-                        'current': i + 1, 'total': total,
-                        'symbol': symbol, 'data': {'status': 'error', 'error': str(e)},
-                        'message': f'[{symbol}] 分析失败: {e}',
+        workers = max(1, min(self._max_concurrency, total))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(_analyze_one, i, symbol): (i, symbol)
+                for i, symbol in enumerate(symbols)
+            }
+            cancelled = False
+            for future in as_completed(futures):
+                index, symbol = futures[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    logger.error(f"[{symbol}] 批量分析线程异常: {e}")
+                    results_by_index.setdefault(index, {
+                        'symbol': symbol, 'status': 'error', 'error': str(e),
                     })
+
+                if _cancelled():
+                    cancelled = True
+                    for pending in futures:
+                        if not pending.done():
+                            pending.cancel()
+                    break
+
+                completed_count += 1
+                entry = results_by_index.get(index)
+                if entry is None:
+                    continue
+                if progress_callback:
+                    if entry['status'] == 'error':
+                        message = f"[{symbol}] 分析失败: {entry.get('error', '')}"
+                    else:
+                        message = f"[{symbol}] 分析完成 ({entry['status']})"
+                    progress_callback('stock_result', {
+                        'current': completed_count, 'total': total,
+                        'symbol': symbol, 'data': entry.get('data') or {'status': 'error', 'error': entry.get('error', '')},
+                        'message': message,
+                    })
+
+        all_results = [results_by_index[i] for i in range(total) if i in results_by_index]
+
+        if cancelled:
+            return _cancelled_result()
 
         # 批量总结 + 优质推荐
         success_results = [r for r in all_results if r['status'] == 'complete']
@@ -545,19 +586,25 @@ class BatchAnalyzer:
             return {}
 
         from openai import OpenAI
+        from analysis.llm_guard import llm_slot
+        from analysis.usage_tracker import record_usage
 
         client = OpenAI(api_key=api_key, base_url=base_url, timeout=60, max_retries=1)
 
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=temperature,
-            response_format={"type": "json_object"},
-            max_tokens=4096,
-        )
+        with llm_slot():
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=temperature,
+                response_format={"type": "json_object"},
+                max_tokens=4096,
+            )
+        usage = getattr(resp, 'usage', None)
+        if usage is not None:
+            record_usage(getattr(usage, 'prompt_tokens', 0), getattr(usage, 'completion_tokens', 0))
 
         raw = resp.choices[0].message.content or "{}"
         return self._parse_json(raw)

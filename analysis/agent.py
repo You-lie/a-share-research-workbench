@@ -46,11 +46,24 @@ def _get_search_service():
     try:
         from market_data.search.search_service import SearchService
         import os as _os
-        bocha_key = _os.environ.get('BOCHA_API_KEY') or getattr(settings, 'BOCHA_API_KEY', None)
-        bocha_keys = [k.strip() for k in bocha_key.split(',') if k.strip()] if bocha_key else None
-        tavily_key = _os.environ.get('TAVILY_API_KEY') or getattr(settings, 'TAVILY_API_KEY', None)
-        tavily_keys = [k.strip() for k in tavily_key.split(',') if k.strip()] if tavily_key else None
-        svc = SearchService(bocha_keys=bocha_keys, tavily_keys=tavily_keys)
+
+        def _keys(*names):
+            for name in names:
+                raw = _os.environ.get(name) or getattr(settings, name, None)
+                if raw:
+                    parsed = [item.strip() for item in str(raw).split(',') if item.strip()]
+                    if parsed:
+                        return parsed
+            return None
+
+        svc = SearchService(
+            bocha_keys=_keys('BOCHA_API_KEY', 'BOCHA_API_KEYS'),
+            tavily_keys=_keys('TAVILY_API_KEY', 'TAVILY_API_KEYS'),
+            anspire_keys=_keys('ANSPIRE_API_KEY', 'ANSPIRE_API_KEYS'),
+            brave_keys=_keys('BRAVE_API_KEY', 'BRAVE_API_KEYS'),
+            serpapi_keys=_keys('SERPAPI_API_KEY', 'SERPAPI_API_KEYS'),
+            minimax_keys=_keys('MINIMAX_API_KEY', 'MINIMAX_API_KEYS'),
+        )
         _search_service_cache = svc
         _search_service_cache_time = now
         return svc

@@ -1,5 +1,5 @@
 """
-StockFish - A 股实时分析 + 股价推演系统 (v2)
+观潮 - A 股实时分析 + 股价推演系统 (v2)
 
 API:
   POST /api/analyze     完整多因子分析（技术+基本面+舆情+预测）
@@ -160,6 +160,9 @@ qlib_finetune_tasks = {}
 _qlib_finetune_lock = threading.Lock()
 _paper_portfolio_store = None
 _paper_portfolio_lock = threading.Lock()
+_paper_quote_cache = {}
+_paper_quote_cache_lock = threading.Lock()
+_PAPER_QUOTE_TTL_SECONDS = 60.0
 _mirofish_process = None
 _mirofish_process_lock = threading.Lock()
 _mirofish_log_handle = None
@@ -179,13 +182,13 @@ def _mirofish_port_is_open(host: str, port: int) -> bool:
 
 
 def _stop_managed_mirofish() -> None:
-    """Stop only the MiroFish process started by this StockFish process."""
+    """Stop only the MiroFish process started by this 观潮 process."""
     global _mirofish_process, _mirofish_log_handle
     with _mirofish_process_lock:
         process = _mirofish_process
         _mirofish_process = None
     if process is not None and process.poll() is None:
-        logger.info("停止由 StockFish 启动的 MiroFish 服务...")
+        logger.info("停止由 观潮 启动的 MiroFish 服务...")
         process.terminate()
         try:
             process.wait(timeout=5)
@@ -197,7 +200,7 @@ def _stop_managed_mirofish() -> None:
 
 
 def _start_mirofish_if_needed() -> bool:
-    """Reuse a local MiroFish service or start one alongside StockFish."""
+    """Reuse a local MiroFish service or start one alongside 观潮."""
     global _mirofish_process, _mirofish_log_handle
     if not settings.MIROFISH_AUTO_START:
         logger.info("MiroFish 自动启动已关闭")
@@ -206,7 +209,7 @@ def _start_mirofish_if_needed() -> bool:
     host = str(settings.MIROFISH_HOST or "localhost")
     port = int(settings.MIROFISH_PORT)
     if not _is_local_mirofish_host(host):
-        logger.info(f"MiroFish 使用远程地址 {host}:{port}，不由 StockFish 启动")
+        logger.info(f"MiroFish 使用远程地址 {host}:{port}，不由 观潮 启动")
         return orchestrator.client.health_check()
     if orchestrator.client.health_check():
         logger.info(f"复用已运行的 MiroFish 服务: {orchestrator.client.base_url}")
@@ -276,12 +279,31 @@ def _get_paper_portfolio_store() -> PaperPortfolioStore:
         return _paper_portfolio_store
 
 
-def _paper_quote(symbol: str):
-    quote = agent.provider.get_quote(symbol)
+def _paper_quote_cached(symbol: str, force: bool = False):
+    key = str(symbol).strip()
+    now = time.monotonic()
+    with _paper_quote_cache_lock:
+        cached = _paper_quote_cache.get(key)
+        if cached and not force and now - cached[0] < _PAPER_QUOTE_TTL_SECONDS:
+            return cached[1]
+    quote = agent.provider.get_quote(key)
     if quote is not None and not getattr(quote, 'source', ''):
         quote.source = agent.provider.backend_name
         quote.endpoint = '实时行情'
+    if quote is not None:
+        with _paper_quote_cache_lock:
+            _paper_quote_cache[key] = (now, quote)
     return quote
+
+
+def _paper_quote(symbol: str):
+    """Return a position quote with a short TTL cache so re-entering the ledger is instant."""
+    return _paper_quote_cached(symbol, force=False)
+
+
+def _paper_quote_fresh(symbol: str):
+    """Force-fetch a fresh quote for the manual refresh button, bypassing the TTL cache."""
+    return _paper_quote_cached(symbol, force=True)
 
 
 def _serialize_qlib_paths() -> dict:
@@ -713,7 +735,7 @@ _PREDICTION_HISTORY_ID_RE = re.compile(r"^[A-Za-z0-9_-]+_prediction_\d{8}_\d{6}$
 
 
 def _prediction_history_root() -> Path:
-    """Return the single local directory containing completed StockFish reports."""
+    """Return the single local directory containing completed 观潮 reports."""
     root = Path(report_gen.output_dir).resolve()
     root.mkdir(parents=True, exist_ok=True)
     return root
@@ -785,7 +807,7 @@ def list_prediction_history():
 
 @app.route('/api/prediction-history/<history_id>/report', methods=['GET'])
 def open_prediction_history_report(history_id: str):
-    """Open a persisted StockFish HTML report after the in-memory task has expired."""
+    """Open a persisted 观潮 HTML report after the in-memory task has expired."""
     try:
         json_path, html_path = _prediction_history_paths(history_id)
     except ValueError as exc:
@@ -797,7 +819,7 @@ def open_prediction_history_report(history_id: str):
 
 @app.route('/api/prediction-history/<history_id>', methods=['DELETE'])
 def delete_prediction_history(history_id: str):
-    """Delete only the StockFish report pair, never the underlying MiroFish runtime data."""
+    """Delete only the 观潮 report pair, never the underlying MiroFish runtime data."""
     try:
         json_path, html_path = _prediction_history_paths(history_id)
     except ValueError as exc:
@@ -2122,9 +2144,21 @@ def config():
 #  API: 配置健康检查
 # ==========================================
 
+_health_check_cache = None
+_health_check_cache_at = 0.0
+_health_check_cache_lock = threading.Lock()
+_HEALTH_CHECK_TTL_SECONDS = 300.0
+
+
 @app.route('/api/config/health', methods=['GET'])
 def config_health():
-    """返回完整的配置健康检查报告"""
+    """返回完整的配置健康检查报告（默认复用 5 分钟缓存，?refresh=1 强制重查）"""
+    global _health_check_cache, _health_check_cache_at
+    force = str(request.args.get('refresh', '')).strip().lower() in {'1', 'true', 'yes'}
+    now = time.monotonic()
+    with _health_check_cache_lock:
+        if not force and _health_check_cache is not None and now - _health_check_cache_at < _HEALTH_CHECK_TTL_SECONDS:
+            return jsonify(_health_check_cache)
     from config_health import ConfigHealthChecker
     from analysis.agent import _get_search_service
     checker = ConfigHealthChecker(
@@ -2133,7 +2167,137 @@ def config_health():
         orchestrator_obj=orchestrator,
         search_service_obj=_get_search_service(),
     )
-    return jsonify(checker.run_all_checks())
+    result = checker.run_all_checks()
+    with _health_check_cache_lock:
+        _health_check_cache = result
+        _health_check_cache_at = time.monotonic()
+    return jsonify(result)
+
+
+# ==========================================
+#  API: 配置管理（运行中热更新 .env）
+# ==========================================
+
+settings_apply_lock = threading.Lock()
+
+
+def _refresh_runtime_settings() -> None:
+    """Push freshly saved .env values into long-lived in-memory objects."""
+    # PredictionNode caches key/base_url/model at construction; downstream
+    # agents are built per call from these attributes.
+    node = agent.prediction_node
+    node.api_key = os.environ.get('LLM_API_KEY') or getattr(settings, 'LLM_API_KEY', '') or ''
+    node.base_url = os.environ.get('LLM_BASE_URL') or getattr(settings, 'LLM_BASE_URL', '') or 'https://api.openai.com/v1'
+    node.model = os.environ.get('LLM_MODEL_NAME') or getattr(settings, 'LLM_MODEL_NAME', '') or 'gpt-4o-mini'
+    # SearchService caches keys for 5 minutes; drop the cache so new keys apply now.
+    try:
+        from analysis import agent as agent_module
+        agent_module._search_service_cache = None
+        agent_module._search_service_cache_time = 0
+    except Exception:
+        pass
+    # Health panel reflects the new configuration immediately.
+    global _health_check_cache, _health_check_cache_at
+    with _health_check_cache_lock:
+        _health_check_cache = None
+        _health_check_cache_at = 0.0
+
+
+def _restart_managed_mirofish_async() -> None:
+    """Restart only the MiroFish instance this process owns (for Zep key changes)."""
+    def _worker():
+        try:
+            _stop_managed_mirofish()
+            _start_mirofish_if_needed()
+        except Exception as exc:
+            logger.warning(f"MiroFish 重启失败: {exc}")
+    threading.Thread(target=_worker, daemon=True).start()
+
+
+@app.route('/api/settings', methods=['GET'])
+def get_runtime_settings():
+    try:
+        from settings_manager import read_config
+        return jsonify(read_config())
+    except Exception as exc:
+        logger.exception(f"读取配置失败: {exc}")
+        return jsonify({'error': f'读取配置失败: {exc}'}), 500
+
+
+@app.route('/api/settings', methods=['PUT'])
+def update_runtime_settings():
+    payload = request.get_json(silent=True) or {}
+    updates = payload.get('updates')
+    if not isinstance(updates, dict) or not updates:
+        return jsonify({'error': '没有需要保存的配置'}), 400
+    if not settings_apply_lock.acquire(blocking=False):
+        return jsonify({'error': '另一个配置保存正在进行，请稍后重试'}), 409
+    try:
+        from settings_manager import apply_updates
+        result = apply_updates(updates)
+        _refresh_runtime_settings()
+        zep_changed = 'ZEP_API_KEY' in (result.get('changed') or {})
+        if zep_changed:
+            _restart_managed_mirofish_async()
+        return jsonify({
+            'ok': True,
+            'changed': result.get('changed', {}),
+            'restart_hint': result.get('restart_hint', ''),
+        })
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        logger.exception(f"保存配置失败: {exc}")
+        return jsonify({'error': f'保存配置失败: {exc}'}), 500
+    finally:
+        settings_apply_lock.release()
+
+
+@app.route('/api/llm/usage', methods=['GET'])
+def llm_usage():
+    """Return LLM balance (when the provider supports it) and today's tracked usage."""
+    from analysis.usage_tracker import get_today_usage, record_balance_snapshot, get_daily_spend
+
+    usage = get_today_usage()
+    balance_info = None
+    balance_error = None
+    try:
+        import requests as _requests
+        key = os.environ.get('LLM_API_KEY') or getattr(settings, 'LLM_API_KEY', '') or ''
+        base = (os.environ.get('LLM_BASE_URL') or getattr(settings, 'LLM_BASE_URL', '') or '').rstrip('/')
+        if key and base:
+            resp = _requests.get(
+                f"{base}/user/balance",
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                infos = data.get("balance_infos") or []
+                first = infos[0] if infos else {}
+                try:
+                    total = float(first.get("total_balance"))
+                except (TypeError, ValueError):
+                    total = None
+                if total is not None:
+                    record_balance_snapshot(total)
+                    balance_info = {
+                        "currency": first.get("currency") or "",
+                        "total": total,
+                        "granted": first.get("granted_balance"),
+                        "topped_up": first.get("topped_up_balance"),
+                        "is_available": bool(data.get("is_available", True)),
+                        "today_spend": get_daily_spend(total),
+                    }
+            else:
+                balance_error = f"余额接口返回 {resp.status_code}"
+    except Exception as exc:
+        balance_error = str(exc)
+    return jsonify({
+        "usage": usage,
+        "balance": balance_info,
+        "balance_error": balance_error,
+    })
 
 
 # ==========================================
@@ -2169,16 +2333,18 @@ def memory_stats():
 
 
 # ==========================================
-#  API: 本地纸面组合（不连接券商）
+#  API: 本地持仓账本（不连接券商）
 # ==========================================
 
 @app.route('/api/paper-portfolio/overview', methods=['GET'])
 def paper_portfolio_overview():
     try:
-        return jsonify(_get_paper_portfolio_store().overview(_paper_quote))
+        force = str(request.args.get('refresh', '')).strip().lower() in {'1', 'true', 'yes'}
+        fetcher = _paper_quote_fresh if force else _paper_quote
+        return jsonify(_get_paper_portfolio_store().overview(fetcher))
     except Exception as exc:
-        logger.exception(f"读取纸面组合失败: {exc}")
-        return jsonify({'error': f'读取纸面组合失败: {exc}'}), 500
+        logger.exception(f"读取持仓账本失败: {exc}")
+        return jsonify({'error': f'读取持仓账本失败: {exc}'}), 500
 
 
 @app.route('/api/paper-portfolio/settings', methods=['GET', 'PUT'])
@@ -2316,13 +2482,13 @@ def _ensure_single_server(port: int) -> None:
         probe.settimeout(0.5)
         if probe.connect_ex(("127.0.0.1", port)) == 0:
             raise RuntimeError(
-                f"端口 {port} 已有 StockFish 或其他服务运行，请勿重复启动。"
+                f"端口 {port} 已有 观潮 或其他服务运行，请勿重复启动。"
             )
 
 if __name__ == '__main__':
     _ensure_single_server(settings.PORT)
     _start_mirofish_if_needed()
-    logger.info(f"StockFish v2 启动: http://{settings.HOST}:{settings.PORT}")
+    logger.info(f"观潮 v2 启动: http://{settings.HOST}:{settings.PORT}")
     app.run(
         host=settings.HOST,
         port=settings.PORT,

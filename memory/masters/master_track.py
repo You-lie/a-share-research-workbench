@@ -26,10 +26,14 @@ from memory import MASTERS_DIR
 class MasterTrackDB:
     """大师追踪数据库 — 基于文件的 append-only 存储"""
 
+    # Class-level lock: every MasterTrackDB instance touches the same JSON
+    # files, so per-instance locks would let concurrent analysis threads
+    # read-modify-write the same record file at once.
+    _lock = threading.RLock()
+
     def __init__(self, base_dir: Optional[Path] = None):
         self.base_dir = base_dir or MASTERS_DIR
         self.base_dir.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.RLock()
 
     # ── 记录 ──
 

@@ -64,7 +64,7 @@ class MiroFishHTTPClient:
     # ---------- 图谱 ----------
 
     def generate_ontology(self, seed_text: str, simulation_requirement: str,
-                          project_name: str = "StockFish Prediction") -> Dict:
+                          project_name: str = "Guanchao Prediction") -> Dict:
         """上传种子文档 → 生成本体"""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt',
                                          encoding='utf-8', delete=False) as f:
@@ -198,7 +198,7 @@ class MiroFishHTTPClient:
 
 class SimulationOrchestrator:
     """
-    模拟编排器：StockFish 分析 → MiroFish OASIS 推演 → 预测报告
+    模拟编排器：观潮分析 → MiroFish OASIS 推演 → 预测报告
     """
 
     def __init__(self):
@@ -262,7 +262,7 @@ class SimulationOrchestrator:
         try:
             # Step 3: 上传种子文档 → 生成本体
             sim_req = f"Predict the stock price movement of {name}({symbol}) using multi-agent simulation. Scenario: {scenario}"
-            project_name = f"StockFish-{symbol}-{ts}"
+            project_name = f"Guanchao-{symbol}-{ts}"
             ont_data = self.client.generate_ontology(seed_text, sim_req, project_name)
             project_id = ont_data['project_id']
             logger.info(f"项目创建: {project_id}")
@@ -351,7 +351,7 @@ class SimulationOrchestrator:
             logger.info(f"MiroFish 报告字段: {list(report.keys())}, markdown长度: {len(report.get('markdown_content', '') or '')}")
             result['report'] = report
             result['status'] = 'simulated'
-            logger.info(f"StockFish→MiroFish 推演完成: {symbol}")
+            logger.info(f"观潮→MiroFish 推演完成: {symbol}")
 
         except Exception as e:
             logger.error(f"MiroFish 推演失败: {e}")

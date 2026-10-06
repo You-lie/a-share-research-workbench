@@ -124,6 +124,7 @@ class BaseAgent:
             return {}
 
         from openai import OpenAI
+        from analysis.llm_guard import llm_slot
 
         for attempt in range(self.max_retries + 1):
             try:
@@ -141,7 +142,15 @@ class BaseAgent:
                     kwargs["response_format"] = {"type": "json_object"}
                     kwargs["max_tokens"] = 4096  # CIO 决策 JSON 较长，需要足够 token
 
-                resp = client.chat.completions.create(**kwargs)
+                with llm_slot():
+                    resp = client.chat.completions.create(**kwargs)
+                try:
+                    from analysis.usage_tracker import record_usage
+                    usage = getattr(resp, 'usage', None)
+                    if usage is not None:
+                        record_usage(getattr(usage, 'prompt_tokens', 0), getattr(usage, 'completion_tokens', 0))
+                except Exception:
+                    pass
                 raw = resp.choices[0].message.content or "{}"
                 return self._parse_json(raw)
 

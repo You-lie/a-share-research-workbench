@@ -1,11 +1,12 @@
 """
-AdvancedBackend: 适配 daily_stock_analysis 的 DataFetcherManager 到 StockFish 的 BaseStockBackend 接口。
+AdvancedBackend: 适配 daily_stock_analysis 的 DataFetcherManager 到 观潮 的 BaseStockBackend 接口。
 
 通过 STOCK_BACKEND=advanced 激活，提供 11 个行情数据源 + 多源自动切换能力。
 """
 
 import logging
 import re
+import threading
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -74,6 +75,7 @@ class AdvancedBackend(BaseStockBackend):
         self._initialized = False
         self._historical_pe_baostock = None
         self._historical_pe_tushare = None
+        self._lazy_init_lock = threading.Lock()
 
     @classmethod
     def _tag_financial_fields(cls, financial: FinancialSummary, source: str) -> None:
@@ -121,17 +123,22 @@ class AdvancedBackend(BaseStockBackend):
             return self._manager
         if self._init_error is not None:
             return None
-        try:
-            from market_data.data_fetchers.base import DataFetcherManager
+        with self._lazy_init_lock:
+            if self._manager is not None:
+                return self._manager
+            if self._init_error is not None:
+                return None
+            try:
+                from market_data.data_fetchers.base import DataFetcherManager
 
-            self._manager = DataFetcherManager()
-            self._initialized = True
-            logger.info("AdvancedBackend: DataFetcherManager 初始化成功")
-            return self._manager
-        except Exception as e:
-            self._init_error = e
-            logger.warning(f"AdvancedBackend: DataFetcherManager 初始化失败: {e}")
-            return None
+                self._manager = DataFetcherManager()
+                self._initialized = True
+                logger.info("AdvancedBackend: DataFetcherManager 初始化成功")
+                return self._manager
+            except Exception as e:
+                self._init_error = e
+                logger.warning(f"AdvancedBackend: DataFetcherManager 初始化失败: {e}")
+                return None
 
     def _is_available(self) -> bool:
         return self.manager is not None

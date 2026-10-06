@@ -17,7 +17,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-# StockFish project root (market_data/stock_index/ → market_data/ → StockFish/)
+# 观潮 project root (market_data/stock_index/ → market_data/ → 观潮/)
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_STOCK_INDEX_REMOTE_URL = (
     "https://raw.githubusercontent.com/ZhuLinsen/daily_stock_analysis/"

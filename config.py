@@ -1,5 +1,5 @@
 """
-StockFish 全局配置
+观潮 全局配置
 pydantic-settings 从 .env 和环境变量自动加载
 """
 import os
@@ -121,6 +121,10 @@ class Settings(BaseSettings):
 
     # ===== 行情缓存 =====
     CACHE_TTL_SECONDS: int = 60
+
+    # ===== 并发分析 =====
+    BATCH_CONCURRENCY: int = 5          # 批量分析并发股票数（1-8）
+    LLM_MAX_CONCURRENCY: int = 8        # 全局 LLM 并发调用上限
 
     # ===== 记忆系统 (Memory) =====
     MEMORY_ENABLED: bool = True                       # 总开关

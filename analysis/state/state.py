@@ -1,5 +1,5 @@
 """
-StockFish 分析 Agent 状态定义
+观潮 分析 Agent 状态定义
 """
 from dataclasses import dataclass, field, asdict
 from typing import Optional, List, Dict, Any
@@ -27,7 +27,7 @@ class AnalysisState:
     technical_indicators: Optional[Dict] = None
     financial_summary: Optional[Dict] = None
     data_provenance: Optional[Dict] = None
-    # 本次分析归档路径。供纸面组合交易回溯当时的完整分析快照。
+    # 本次分析归档路径。供持仓账本交易回溯当时的完整分析快照。
     analysis_snapshot_path: Optional[str] = None
     news: List[Dict] = field(default_factory=list)
     guba_posts: List[Dict] = field(default_factory=list)

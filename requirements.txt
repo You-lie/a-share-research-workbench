@@ -1,4 +1,4 @@
-# StockFish 依赖
+# 观潮 (Guanchao) 依赖
 flask>=3.0.0
 flask-cors>=6.0.0
 python-dotenv>=1.0.0

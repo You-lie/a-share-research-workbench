@@ -1,4 +1,7 @@
-# StockFish Agent Guide / StockFish 开发 Agent 指南
+# 观潮 (Guanchao) Agent Guide / 观潮 开发 Agent 指南
+
+观潮是本地 A 股研究与投资决策辅助系统，基于上游 StockFish 二次开发。项目目录仍为 `stock-fish/`，上游署名见 `NOTICE.md`。
+Guanchao is a local A-share research and decision-support system, derived from upstream StockFish. The project directory remains `stock-fish/`; upstream attribution lives in `NOTICE.md`.
 
 ## Scope / 范围
 
@@ -7,8 +10,8 @@
 
 ## Environment / 环境
 
-- StockFish and MiroFish share the `stock_quant` Conda environment (Python 3.11).
-- StockFish 与 MiroFish 共用 `stock_quant` Conda 环境（Python 3.11）。
+- Guanchao and MiroFish share the `stock_quant` Conda environment (Python 3.11).
+- 观潮与 MiroFish 共用 `stock_quant` Conda 环境（Python 3.11）。
 - Qlib uses a separate `stock_qlib` environment. Keep Qlib dependencies out of `stock_quant`.
 - Qlib 使用独立的 `stock_qlib` 环境；不要把 Qlib 依赖装入 `stock_quant`。
 - On Windows, invoke Python by its resolved full path when Conda activation is unreliable. Resolve the active environment interpreter from Conda instead of hard-coding a user-specific path.
@@ -28,13 +31,13 @@
 - 回测只能作为历史研究结果展示，不得暗示保证收益或实盘表现。
 - Preserve timestamps, data provenance, configuration snapshots, and cost assumptions in generated outputs.
 - 生成结果必须保留时间、数据溯源、配置快照和成本假设。
-- Never expose `.env` values, API keys, local reports, paper-portfolio records, or personal paths in code, logs, docs, or responses.
-- 不得在代码、日志、文档或回复中泄露 `.env`、API Key、本地报告、纸面组合记录或个人路径。
+- Never expose `.env` values, API keys, local reports, position-ledger records, or personal paths in code, logs, docs, or responses.
+- 不得在代码、日志、文档或回复中泄露 `.env`、API Key、本地报告、持仓账本记录或个人路径。
 
 ## Local Runtime / 本地运行
 
-- `app.py` starts StockFish and automatically starts a local MiroFish service when `MIROFISH_AUTO_START=true`.
-- `app.py` 启动 StockFish，并在 `MIROFISH_AUTO_START=true` 时自动拉起本地 MiroFish。
+- `app.py` starts Guanchao and automatically starts a local MiroFish service when `MIROFISH_AUTO_START=true`.
+- `app.py` 启动观潮，并在 `MIROFISH_AUTO_START=true` 时自动拉起本地 MiroFish。
 - Bind local services to `127.0.0.1` unless the user explicitly requests a network-accessible deployment.
 - 除非用户明确要求局域网或公网部署，本地服务必须绑定到 `127.0.0.1`。
 - The Qlib UI owns data download, path settings, training, inference, and model deletion. Keep paths project-local by default.
@@ -46,7 +49,7 @@
 - `static/index.html`: single-page analysis UI. / 单页分析前端。
 - `analysis/`: analysis, LLM decisions, and batch workflows. / 分析、LLM 决策和批量任务。
 - `market_data/`: quotes, financials, news, and provenance adapters. / 行情、财务、新闻与数据溯源适配器。
-- `paper_portfolio.py`: local SQLite paper-portfolio ledger. / 本地 SQLite 纸面组合账本。
+- `paper_portfolio.py`: local SQLite position ledger. / 本地 SQLite 持仓账本。
 - `prediction_report/`: persisted smart-simulation reports. / 持久化的智能推演报告。
 - `simulation_bridge/` and `MiroFish/backend/`: optional simulation integration. / 可选的推演服务集成。
 - `qlib-zh/`: Qlib data, training, inference, and backtest integration. / Qlib 数据、训练、推理与回测集成。

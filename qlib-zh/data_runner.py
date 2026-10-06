@@ -60,7 +60,7 @@ def _get_latest_release_info() -> dict:
     session = _make_session()
     resp = session.get(
         RELEASE_API_URL,
-        headers={"User-Agent": "StockFish/1.0"},
+        headers={"User-Agent": "Guanchao/1.0"},
         timeout=30,
     )
     resp.raise_for_status()
@@ -98,7 +98,7 @@ def _download_file(
         url,
         headers={
             "Accept": "application/octet-stream",
-            "User-Agent": "StockFish/1.0",
+            "User-Agent": "Guanchao/1.0",
         },
         stream=True,
         timeout=DOWNLOAD_TIMEOUT,

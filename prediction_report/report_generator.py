@@ -569,7 +569,7 @@ class PredictionReportGenerator:
 {sim_section}
 
   <div class="footer">
-    StockFish AI Analysis · {datetime.now().strftime('%Y-%m-%d %H:%M')}<br/>
+    观潮 AI Analysis · {datetime.now().strftime('%Y-%m-%d %H:%M')}<br/>
     <span style="font-size:11px;">本报告仅供参考，不构成投资建议</span>
   </div>
 </body></html>"""

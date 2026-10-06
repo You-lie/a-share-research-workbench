@@ -7,10 +7,10 @@ import os
 from dotenv import load_dotenv
 
 app_dir = os.path.dirname(__file__)
-stockfish_env = os.path.abspath(os.path.join(app_dir, '../../../.env'))
+parent_env = os.path.abspath(os.path.join(app_dir, '../../../.env'))
 mirofish_env = os.path.abspath(os.path.join(app_dir, '../../.env'))
 
-load_dotenv(stockfish_env, override=False)
+load_dotenv(parent_env, override=False)
 load_dotenv(mirofish_env, override=True)
 
 

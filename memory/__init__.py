@@ -1,5 +1,5 @@
 """
-StockFish 记忆系统 (Memory System)
+观潮 记忆系统 (Memory System)
 
 四层架构:
 1. cache/     — 数据缓存 (避免重复 API 请求)

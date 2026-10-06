@@ -42,6 +42,9 @@ data/*.sqlite
 data/*.sqlite3
 data/*.db-wal
 data/*.db-shm
+# LLM 用量与余额统计（个人使用数据）
+data/llm_usage.json
+data/llm_balance.json
 *.dist-info/
 
 # 系统文件

@@ -1,1 +1,1 @@
-# StockFish qlib-zh — Qlib 量化推理桥接模块
+# 观潮 qlib-zh — Qlib 量化推理桥接模块

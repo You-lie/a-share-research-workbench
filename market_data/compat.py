@@ -1,5 +1,5 @@
 """
-Compatibility adapter: wraps StockFish pydantic Settings into the attribute-based
+Compatibility adapter: wraps 观潮 pydantic Settings into the attribute-based
 interface expected by ported daily_stock_analysis modules.
 
 Usage in ported code (replaces `from src.config import get_config`):
@@ -51,7 +51,7 @@ def resolve_news_window_days(
 
 # ---- record_provider_run stub ----
 # The ported base.py calls record_provider_run() for diagnostics tracking.
-# In StockFish we don't need this subsystem, so we provide a no-op stub
+# In 观潮 we don't need this subsystem, so we provide a no-op stub
 # that accepts the same kwargs signature without doing anything.
 
 def record_provider_run(
@@ -65,14 +65,14 @@ def record_provider_run(
     fallback_to: str = "",
     **kwargs: Any,
 ) -> None:
-    """No-op stub for diagnostics tracking (not used in StockFish)."""
+    """No-op stub for diagnostics tracking (not used in 观潮)."""
 
 
 # ---- Config adapter ----
 
 class LegacyConfigAdapter:
     """
-    Wraps StockFish's pydantic Settings and exposes attribute-style access
+    Wraps 观潮's pydantic Settings and exposes attribute-style access
     matching the field names used by the ported daily_stock_analysis code.
 
     Attribute mapping rules:
@@ -353,7 +353,7 @@ _config_singleton: Optional[LegacyConfigAdapter] = None
 
 
 def get_config() -> LegacyConfigAdapter:
-    """Return the singleton LegacyConfigAdapter wrapping StockFish settings."""
+    """Return the singleton LegacyConfigAdapter wrapping 观潮 settings."""
     global _config_singleton
     if _config_singleton is None:
         _config_singleton = LegacyConfigAdapter()

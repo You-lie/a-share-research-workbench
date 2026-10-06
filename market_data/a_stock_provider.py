@@ -20,6 +20,8 @@ from pathlib import Path
 
 from loguru import logger
 
+from market_data.baostock_guard import BAOSTOCK_LOCK
+
 
 # ========== 统一数据结构 ==========
 
@@ -429,6 +431,10 @@ class BaoStockBackend(BaseStockBackend):
         return 'sh.' + code if code.startswith(('6', '9')) else 'sz.' + code
 
     def get_quote(self, symbol: str) -> Optional[Quote]:
+        with BAOSTOCK_LOCK:
+            return self._get_quote_locked(symbol)
+
+    def _get_quote_locked(self, symbol: str) -> Optional[Quote]:
         try:
             self._login()
             prefix = self._bs_prefix(symbol)
@@ -476,6 +482,10 @@ class BaoStockBackend(BaseStockBackend):
             return None
 
     def get_historical(self, symbol: str, days: int = 365) -> Optional[List[dict]]:
+        with BAOSTOCK_LOCK:
+            return self._get_historical_locked(symbol, days)
+
+    def _get_historical_locked(self, symbol: str, days: int = 365) -> Optional[List[dict]]:
         try:
             self._login()
             prefix = self._bs_prefix(symbol)
@@ -501,6 +511,10 @@ class BaoStockBackend(BaseStockBackend):
             return None
 
     def get_financials(self, symbol: str) -> Optional[FinancialSummary]:
+        with BAOSTOCK_LOCK:
+            return self._get_financials_locked(symbol)
+
+    def _get_financials_locked(self, symbol: str) -> Optional[FinancialSummary]:
         try:
             self._login()
             prefix = self._bs_prefix(symbol)
@@ -537,6 +551,10 @@ class BaoStockBackend(BaseStockBackend):
             return None
 
     def get_historical_pe(self, symbol: str, days: int = 365 * 3) -> List[float]:
+        with BAOSTOCK_LOCK:
+            return self._get_historical_pe_locked(symbol, days)
+
+    def _get_historical_pe_locked(self, symbol: str, days: int = 365 * 3) -> List[float]:
         try:
             self._login()
             prefix = self._bs_prefix(symbol)

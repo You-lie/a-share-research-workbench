@@ -499,16 +499,22 @@ class PredictionNode:
     # ── Agent 调用 ──
 
     def _call_agent(self, client, role: str, prompt: str, data: str) -> AgentView:
+        from analysis.llm_guard import llm_slot
+        from analysis.usage_tracker import record_usage
         full_prompt = f"{prompt}\n\n## 分析数据\n{data}"
-        resp = client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": f"你是A股{role}分析专家。请仅基于提供的数据给出独立判断。输出严格JSON。"},
-                {"role": "user", "content": full_prompt},
-            ],
-            temperature=0.3,
-            response_format={"type": "json_object"},
-        )
+        with llm_slot():
+            resp = client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": f"你是A股{role}分析专家。请仅基于提供的数据给出独立判断。输出严格JSON。"},
+                    {"role": "user", "content": full_prompt},
+                ],
+                temperature=0.3,
+                response_format={"type": "json_object"},
+            )
+        usage = getattr(resp, 'usage', None)
+        if usage is not None:
+            record_usage(getattr(usage, 'prompt_tokens', 0), getattr(usage, 'completion_tokens', 0))
         raw = resp.choices[0].message.content or "{}"
         d = self._parse_json(raw)
         return AgentView(
@@ -523,17 +529,23 @@ class PredictionNode:
 
     def _call_moderator(self, client, state: dict, views: Dict[str, AgentView], debate_text: str) -> dict:
         """主持人阅读三方辩论后给出最终判断"""
+        from analysis.llm_guard import llm_slot
+        from analysis.usage_tracker import record_usage
         prompt = self._moderator_prompt(state, debate_text)
         try:
-            resp = client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "你是A股投资委员会主席。三位分析师（技术面、基本面、舆情）已给出独立判断。请你审阅三方观点，辩论、裁决，输出最终预测JSON。"},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.3,
-                response_format={"type": "json_object"},
-            )
+            with llm_slot():
+                resp = client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": "你是A股投资委员会主席。三位分析师（技术面、基本面、舆情）已给出独立判断。请你审阅三方观点，辩论、裁决，输出最终预测JSON。"},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.3,
+                    response_format={"type": "json_object"},
+                )
+            usage = getattr(resp, 'usage', None)
+            if usage is not None:
+                record_usage(getattr(usage, 'prompt_tokens', 0), getattr(usage, 'completion_tokens', 0))
             raw = resp.choices[0].message.content or "{}"
             result = self._parse_json(raw)
             result['raw'] = raw

@@ -1,21 +1,48 @@
-# StockFish
+# Guanchao (观潮)
 
-StockFish is a local-first A-share research and decision-support workspace. It combines market data, financials, news sentiment, Qlib factor models, MiroFish scenario simulation, and a manual paper portfolio.
+**A local-first intelligent research workspace for China A-shares.** Market data, financials, sentiment, multi-agent debate, machine-learning stock selection, and scenario simulation — all wired into a single page, with every piece of data staying on your machine. No broker connection, no automatic trading.
 
-**It does not connect to a broker, place orders, or provide investment advice.**
+> Not a toy demo: data carries provenance, conclusions pass decision guardrails, backtests come with quality panels, and trades are journaled for review.
 
-[中文 README](README.md)
+[中文 README](README.md) · [Attribution & License](#attribution--license)
+
+![Single-stock analysis](docs/screenshots/01-single-analysis.png)
 
 ## Highlights
 
-- Single-stock research across price, technicals, financials, valuation, news, and forum sentiment.
-- Optional value, growth, trend, contrarian, and macro decision styles.
-- Batch research for custom lists, CSI300, CSI500, and CSI1000 constituents.
-- Qlib data updates, model training, walk-forward backtest review, and model inference from the UI.
-- Local MiroFish multi-agent scenario simulation and persisted reports.
-- Field-level data provenance for quotes, fundamentals, and news.
-- Manual SQLite paper portfolio with audit-friendly trade records. No broker integration.
-- Persisted smart-simulation history with open, download, and delete actions.
+### Multi-agent debate + decision styles
+Each stock is analyzed independently by technical, fundamental, and sentiment agents, then adjudicated by a moderator. Seven investment masters (Buffett, Graham, Lynch, ...) are available as review lenses. Every conclusion passes decision guardrails: contradictory signals are downgraded to "observe", position changes require an entered position, and no buy/sell advice is produced when quotes are unavailable or simulated.
+
+![Multi-agent debate](docs/screenshots/02-agent-debate.png)
+
+### Field-level data provenance
+Every quote, financial metric, and news item carries its **source, retrieval time, reporting period, and basis**. Fallback, cached, or degraded data is labeled explicitly — simulated data is never passed off as real quotes.
+
+### Qlib machine-learning stock selection
+A complete in-UI Qlib workflow: one-click data update → LightGBM walk-forward training → per-fold out-of-sample quality panel (return, Sharpe, drawdown, IC, win rate, stability) → inference that feeds top candidates back into batch analysis. CSI300 and CSI500 universes. Train once, use for months.
+
+![Batch analysis & Qlib tools](docs/screenshots/03-batch-qlib.png)
+
+### Concurrent batch analysis
+Custom lists or index constituents, 5-way concurrency by default (configurable), with a maximum external-call estimate before you start, live per-stock progress, and results ordered by your input.
+
+### MiroFish scenario simulation
+Launch multi-agent crowd simulation for key positions: agents role-play market participants and produce scenario reports. Simulation history is stored locally for review.
+
+![Simulation history](docs/screenshots/06-prediction-history.png)
+
+### Position ledger & review loop
+A manually-confirmed paper ledger: execution price, fees, linked analysis snapshot, and signal rationale per trade; stale vs. fresh quotes clearly distinguished; positions and P&L recomputed chronologically; void and correct actions keep a full audit trail.
+
+![Position ledger](docs/screenshots/04-position-ledger.png)
+
+### Configuration in the UI
+Manage every API key and runtime parameter from the page — changes apply immediately without restart. **LLM balance and today's spend** are shown live; secrets are displayed masked.
+
+![Configuration](docs/screenshots/05-config-settings.png)
+
+### Local-first & private
+All data lands on your disk and is excluded by `.gitignore`: analysis snapshots, ledger database, Qlib data/models, simulation artifacts. The server binds to `127.0.0.1` only.
 
 ## Quick Start on Windows
 
@@ -32,9 +59,9 @@ conda run -n stock_quant python -m pip install -r MiroFish/backend/requirements.
 conda run -n stock_quant python app.py
 ```
 
-Fill `LLM_API_KEY` in `.env`. `TUSHARE_TOKEN`, `TAVILY_API_KEY`, and `ZEP_API_KEY` are optional, feature-specific integrations. Visit `http://127.0.0.1:8000`.
+Fill `LLM_API_KEY` in `.env` (or in the in-app Configuration page). `TUSHARE_TOKEN`, `TAVILY_API_KEY`, and `ZEP_API_KEY` are optional, feature-specific integrations. Visit `http://127.0.0.1:8000`.
 
-When `MIROFISH_AUTO_START=true`, StockFish starts local MiroFish automatically. Keep `HOST=127.0.0.1` for personal local use.
+When `MIROFISH_AUTO_START=true`, Guanchao starts local MiroFish automatically.
 
 ## Optional Qlib Setup
 
@@ -49,32 +76,25 @@ conda run -n stock_qlib python -m pip install pyqlib lightgbm mlflow
 QLIB_PYTHON=C:\path\to\conda\envs\stock_qlib\python.exe
 ```
 
-Use the Qlib tools in Batch Analysis to download data, train a CSI300 or CSI500 model, review its backtest, and run inference. Qlib is optional for ordinary single-stock analysis.
+Then use the Qlib tools in Batch Analysis. Daily flow: update data after market close → run inference with an existing model → review the top candidates in batch analysis. Retrain monthly. Qlib is optional for ordinary single-stock analysis.
 
 ## Local-Only Data
 
 The following paths are generated locally and ignored by Git: `.env`, `data/paper_portfolio.db`, `memory/analysis/`, `data/outputs/`, `memory/cache/data/`, `memory/stocks/`, `qlib-zh/runtime/`, `qlib-zh/DATA/`, and `MiroFish/backend/uploads/`.
 
-Copy these local paths separately when moving to another computer. Do not publish them because they may contain API credentials, research records, reports, simulated data, or personal paper-portfolio history.
-
-## Attribution
-
-This is a local-first derivative of [freenowill/stock-fish](https://github.com/freenowill/stock-fish). The upstream StockFish history includes early development by `zhuhai`, while the upstream release license identifies `freenowill` as the copyright holder.
-
-It also integrates [MiroFish](https://github.com/666ghj/MiroFish), [Microsoft Qlib](https://github.com/microsoft/qlib), [AkShare](https://github.com/akfamily/akshare), and [Tushare](https://tushare.pro). See [NOTICE.md](NOTICE.md) for details.
-
-## License
-
-This project is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).
-
-### Third-Party Licenses
-
-The upstream StockFish release carried an MIT license, reproduced in [NOTICE.md](NOTICE.md). The bundled `MiroFish/backend` declares AGPL-3.0 in its own `pyproject.toml`.
-
-Use, modification, and redistribution of each component remain subject to its applicable license. Preserve the original copyright and licensing notices.
+Copy these paths separately when moving to another computer. Do not publish them — they may contain API credentials, research records, reports, and personal paper-portfolio history.
 
 ## Usage Scope
 
-- This project is for research and decision support only. It does not connect to brokers or place orders.
+- Research and decision support only. No broker connection, no order placement.
 - Market data may be delayed, incomplete, cached, or sourced from a fallback provider. Consult the displayed provenance and timestamp.
 - Qlib backtests, LLM conclusions, and MiroFish simulations do not represent future or live-trading returns.
+
+## Attribution & License
+
+This project is a derivative work built on the open-source project [freenowill/stock-fish](https://github.com/freenowill/stock-fish). The local runtime model, data security layers, Qlib local workflow, data provenance, position ledger, configuration management, and simulation history are redesigned and implemented in this project.
+
+- Upstream StockFish copyright: `Copyright (c) 2026 freenowill` (MIT), preserved in [NOTICE.md](NOTICE.md).
+- Integrated components: [MiroFish](https://github.com/666ghj/MiroFish) (AGPL-3.0), [Microsoft Qlib](https://github.com/microsoft/qlib), [AkShare](https://github.com/akfamily/akshare), and [Tushare](https://tushare.pro).
+
+This project is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). Preserve the original copyright and license notices when redistributing.

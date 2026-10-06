@@ -7,12 +7,12 @@ this module applies a "master philosophy" selection layer:
 
     1. At each rebalance date, pick top-K candidates by model score
     2. For each candidate, compute per-dimension factor scores from Qlib OHLCV data
-    3. Combine dimensions with per-master weights (7 masters from StockFish CIO)
+    3. Combine dimensions with per-master weights (7 masters from 观潮 CIO)
     4. Ensemble across masters → final ranking → select top-N holdings
     5. Build trade signal for PrecomputedWeightStrategy backtest
 
 Key design properties:
-- Uses ONLY Qlib D.features() with expression syntax (no StockFish providers)
+- Uses ONLY Qlib D.features() with expression syntax (no 观潮 providers)
 - Strict no-future-leakage: at date t, only data with datetime <= t
 - Pure rule-based: no LLM calls, no external APIs
 - Factor expressions compute directly from price/volume in one batch query
@@ -29,7 +29,7 @@ import pandas as pd
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Master Dimension Weights
-# Derived from StockFish analysis/agents/cio_prompts.py investment philosophies.
+# Derived from 观潮 analysis/agents/cio_prompts.py investment philosophies.
 # Each master has a 6-dimension weight vector:
 #   [value, quality, growth, momentum, low_risk, sentiment]
 # ═════════════════════════════════════════════════════════════════════════════

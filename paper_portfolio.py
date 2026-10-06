@@ -1,4 +1,4 @@
-"""Local-only paper portfolio ledger. It never talks to a broker."""
+"""Local-only position ledger. It never talks to a broker."""
 
 from __future__ import annotations
 
@@ -6,10 +6,19 @@ import json
 import math
 import sqlite3
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
+
+
+def _safe_fetch_quote(quote_fetcher: Callable[[str], Any], symbol: str) -> Optional[dict]:
+    try:
+        raw = quote_fetcher(symbol)
+        return raw.to_dict() if hasattr(raw, "to_dict") else raw
+    except Exception:
+        return None
 
 
 DEFAULT_SETTINGS = {
@@ -238,11 +247,11 @@ class PaperPortfolioStore:
         if action in BUY_ACTIONS and quantity % 100:
             raise ValueError("A 股买入和加仓数量必须是 100 股整数倍")
         if action in SELL_ACTIONS and quantity > current_quantity:
-            raise ValueError("减持或清空数量不能超过当前纸面持仓")
+            raise ValueError("减持或清空数量不能超过当前持仓")
         commission = round(price * quantity * settings["commission_rate"], 2)
         stamp_duty = round(price * quantity * settings["sell_stamp_duty_rate"], 2) if action in SELL_ACTIONS else 0.0
         if action in BUY_ACTIONS and price * quantity + commission > cash + 1e-8:
-            raise ValueError("纸面可用资金不足，请调整成交价、数量或初始资金")
+            raise ValueError("可用资金不足，请调整成交价、数量或初始资金")
         analysis_snapshot = payload.get("analysis_snapshot") or {}
         if not isinstance(analysis_snapshot, dict):
             raise ValueError("分析快照格式不正确")
@@ -357,19 +366,18 @@ class PaperPortfolioStore:
     def overview(self, quote_fetcher: Optional[Callable[[str], Any]] = None) -> dict:
         settings = self.get_settings()
         cash, positions = self._ledger(self._active_trades(), settings["initial_cash"])
+        held = {symbol: position for symbol, position in positions.items() if position["quantity"] > 0}
+        quotes: dict[str, Optional[dict]] = {}
+        if quote_fetcher and held:
+            with ThreadPoolExecutor(max_workers=min(4, len(held))) as pool:
+                futures = {symbol: pool.submit(_safe_fetch_quote, quote_fetcher, symbol) for symbol in held}
+                for symbol, future in futures.items():
+                    quotes[symbol] = future.result()
         displayed_positions = []
         total_market_value = 0.0
         has_unpriced_position = False
-        for symbol, position in positions.items():
-            if position["quantity"] <= 0:
-                continue
-            quote_data = None
-            if quote_fetcher:
-                try:
-                    raw = quote_fetcher(symbol)
-                    quote_data = raw.to_dict() if hasattr(raw, "to_dict") else raw
-                except Exception:
-                    quote_data = None
+        for symbol, position in held.items():
+            quote_data = quotes.get(symbol)
             if isinstance(quote_data, dict) and float(quote_data.get("price") or 0) > 0:
                 price = float(quote_data["price"])
                 quote_at = str(quote_data.get("timestamp") or datetime.now().isoformat())
