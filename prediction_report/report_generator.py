@@ -125,6 +125,11 @@ class PredictionReportGenerator:
                 'fundamental': sb.get('fundamental'),
                 'sentiment': sb.get('sentiment'),
                 'regime': sb.get('regime'),
+                'regime_label': sb.get('regime_label') or {
+                    'trending_up': '上升趋势',
+                    'trending_down': '下降趋势',
+                    'ranging': '震荡盘整',
+                }.get(sb.get('regime'), sb.get('regime')),
                 'confidence': sb.get('confidence'),
                 'breakdown': sb.get('breakdown', []),
             },

@@ -995,6 +995,10 @@ function provenanceStatusLabel(status) {
   return ({ fresh: '直连', cached: '缓存', fallback: '备用源', partial: '部分数据', mock: '模拟数据', unavailable: '不可用' })[status] || '未记录';
 }
 
+function regimeLabel(regime, fallbackLabel) {
+  return fallbackLabel || ({ trending_up: '上升趋势', trending_down: '下降趋势', ranging: '震荡盘整' })[regime] || regime || '-';
+}
+
 function renderDataProvenance(provenance) {
   const data = provenance || {};
   const sections = data.sections || {};
@@ -3554,7 +3558,7 @@ function renderAnalysis(data) {
     <span class="signal-icon ${overall === 'bullish' ? 'positive' : overall === 'bearish' ? 'negative' : 'neutral'}">${sigEmoji}</span>
     <div>
       <div class="signal-label">${sigLabel} (${sb.final != null ? sb.final : signals.score ?? '-'} / 5)${costPrice > 0 ? '<span class="cost-badge">成本 ¥' + costPrice.toFixed(2) + '</span>' : ''}</div>
-      <div class="signal-meta">${data.stock_name || data.symbol} | 置信度: ${sb.confidence || '-'} | 市场状态: ${sb.regime || '-'} | PE分位: ${data.valuation_percentile != null ? data.valuation_percentile + '%' : '-'}</div>
+      <div class="signal-meta">${data.stock_name || data.symbol} | 置信度: ${sb.confidence || '-'} | 市场状态: ${escapeHtml(regimeLabel(sb.regime, sb.regime_label))} | PE分位: ${data.valuation_percentile != null ? data.valuation_percentile + '%' : '-'}</div>
     </div>
   </div>`;
   html += renderDataProvenance(data.data_provenance);

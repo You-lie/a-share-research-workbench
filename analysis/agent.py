@@ -248,6 +248,12 @@ class StockAnalysisAgent:
                 'fundamental': score_result.fundamental,
                 'sentiment': score_result.sentiment,
                 'regime': score_result.regime,
+                # 中文标签供前端/报告直接展示，避免暴露 trending_up 之类的内部枚举
+                'regime_label': {
+                    'trending_up': '上升趋势',
+                    'trending_down': '下降趋势',
+                    'ranging': '震荡盘整',
+                }.get(score_result.regime, score_result.regime),
                 'confidence': score_result.confidence,
                 'weights': score_result.weights,
                 'breakdown': [

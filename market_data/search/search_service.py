@@ -3063,9 +3063,39 @@ class SearchService:
             if len(filtered) >= max_results:
                 break
 
+        fallen_back = False
+        if not filtered and dropped_old:
+            # 窗口内没有任何结果（例如长假期间，最近的新闻就是节前最后一个交易日）。
+            # 与其返回"无新闻"，不如回退展示最新的一批有日期结果，让页面和模型
+            # 都能看到真实发布时间；日期字段照实展示，不做新旧混淆。
+            dated: List[tuple] = []
+            for item in response.results:
+                published = self._normalize_news_publish_date(item.published_date)
+                if published is None:
+                    continue
+                if published > latest:
+                    continue
+                dated.append((published, item))
+            dated.sort(key=lambda pair: pair[0], reverse=True)
+            for published, item in dated[:max_results]:
+                filtered.append(
+                    SearchResult(
+                        title=item.title,
+                        snippet=item.snippet,
+                        url=item.url,
+                        source=item.source,
+                        published_date=published.isoformat(),
+                        relevance_score=item.relevance_score,
+                        relevance_category=item.relevance_category,
+                        relevance_reasons=item.relevance_reasons,
+                    )
+                )
+            if filtered:
+                fallen_back = True
+
         if dropped_unknown or dropped_old or dropped_future:
             logger.info(
-                "[新闻过滤] %s: provider=%s, total=%s, kept=%s, drop_unknown=%s, drop_old=%s, drop_future=%s, window=[%s,%s]",
+                "[新闻过滤] %s: provider=%s, total=%s, kept=%s, drop_unknown=%s, drop_old=%s, drop_future=%s, window=[%s,%s], fallback=%s",
                 log_scope,
                 response.provider,
                 len(response.results),
@@ -3075,6 +3105,7 @@ class SearchService:
                 dropped_future,
                 earliest.isoformat(),
                 latest.isoformat(),
+                "超窗回退(保留最新有日期结果)" if fallen_back else "无",
             )
 
         return SearchResponse(
