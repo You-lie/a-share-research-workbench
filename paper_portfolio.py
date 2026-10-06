@@ -23,8 +23,15 @@ def _safe_fetch_quote(quote_fetcher: Callable[[str], Any], symbol: str) -> Optio
 
 DEFAULT_SETTINGS = {
     "initial_cash": 100000.0,
-    "commission_rate": 0.0001,
+    # A 股实盘成本口径：佣金万 2.5（每笔最低 5 元）+ 卖出印花税 0.05% + 过户费 0.001%。
+    "commission_rate": 0.00025,
+    "min_commission": 5.0,
     "sell_stamp_duty_rate": 0.0005,
+    "transfer_fee_rate": 0.00001,
+}
+# 旧版本默认值 → 新默认值的升级映射（仅在用户仍在使用旧默认值时自动升级，不动自定义值）。
+_SETTINGS_UPGRADES = {
+    "commission_rate": {"0.0001": 0.00025},
 }
 BUY_ACTIONS = {"buy", "add"}
 SELL_ACTIONS = {"reduce", "clear"}
@@ -72,6 +79,8 @@ class PaperPortfolioStore:
                     stamp_duty_rate REAL NOT NULL,
                     commission REAL NOT NULL,
                     stamp_duty REAL NOT NULL,
+                    transfer_fee_rate REAL NOT NULL DEFAULT 0,
+                    transfer_fee REAL NOT NULL DEFAULT 0,
                     note TEXT NOT NULL DEFAULT '',
                     analysis_snapshot TEXT NOT NULL DEFAULT '{}',
                     status TEXT NOT NULL DEFAULT 'active',
@@ -95,11 +104,23 @@ class PaperPortfolioStore:
                 connection.execute("ALTER TABLE trades ADD COLUMN voided_at TEXT")
             if "correction_of" not in columns:
                 connection.execute("ALTER TABLE trades ADD COLUMN correction_of INTEGER")
+            if "transfer_fee" not in columns:
+                connection.execute("ALTER TABLE trades ADD COLUMN transfer_fee REAL NOT NULL DEFAULT 0")
+            if "transfer_fee_rate" not in columns:
+                connection.execute("ALTER TABLE trades ADD COLUMN transfer_fee_rate REAL NOT NULL DEFAULT 0")
             for key, value in DEFAULT_SETTINGS.items():
                 connection.execute(
                     "INSERT OR IGNORE INTO settings(key, value, updated_at) VALUES (?, ?, ?)",
                     (key, str(value), datetime.now().isoformat()),
                 )
+            # 旧默认值升级：只在该项仍等于旧默认值时替换，保留用户自定义过的值。
+            for key, mapping in _SETTINGS_UPGRADES.items():
+                row = connection.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+                if row and row["value"] in mapping:
+                    connection.execute(
+                        "UPDATE settings SET value = ?, updated_at = ? WHERE key = ?",
+                        (str(mapping[row["value"]]), datetime.now().isoformat(), key),
+                    )
 
     def get_settings(self) -> dict:
         with self._lock, self._connection() as connection:
@@ -128,6 +149,8 @@ class PaperPortfolioStore:
                 raise ValueError(f"{key} 不能小于 0")
             if key.endswith("rate") and parsed > 0.1:
                 raise ValueError(f"{key} 不能超过 10%")
+            if key == "min_commission" and parsed > 100:
+                raise ValueError("最低佣金不能超过 100 元")
             values[key] = parsed
         self._ledger(self._active_trades(), values["initial_cash"], enforce_cash=True)
         now = datetime.now().isoformat()
@@ -173,7 +196,11 @@ class PaperPortfolioStore:
             })
             quantity = int(trade["quantity"])
             amount = quantity * float(trade["price"])
-            costs = float(trade["commission"]) + float(trade["stamp_duty"])
+            costs = (
+                float(trade.get("commission") or 0)
+                + float(trade.get("stamp_duty") or 0)
+                + float(trade.get("transfer_fee") or 0)
+            )
             if trade["action"] in BUY_ACTIONS:
                 cash -= amount + costs
                 if enforce_cash and cash < -1e-8:
@@ -249,8 +276,14 @@ class PaperPortfolioStore:
         if action in SELL_ACTIONS and quantity > current_quantity:
             raise ValueError("减持或清空数量不能超过当前持仓")
         commission = round(price * quantity * settings["commission_rate"], 2)
+        # A 股佣金每笔有最低收费（默认 5 元），小额交易的实际成本远高于费率乘积。
+        min_commission = float(settings.get("min_commission", 0) or 0)
+        if commission < min_commission:
+            commission = round(min_commission, 2)
         stamp_duty = round(price * quantity * settings["sell_stamp_duty_rate"], 2) if action in SELL_ACTIONS else 0.0
-        if action in BUY_ACTIONS and price * quantity + commission > cash + 1e-8:
+        transfer_fee = round(price * quantity * settings.get("transfer_fee_rate", 0.0), 2)
+        total_cost = commission + stamp_duty + transfer_fee
+        if action in BUY_ACTIONS and price * quantity + total_cost > cash + 1e-8:
             raise ValueError("可用资金不足，请调整成交价、数量或初始资金")
         analysis_snapshot = payload.get("analysis_snapshot") or {}
         if not isinstance(analysis_snapshot, dict):
@@ -266,6 +299,8 @@ class PaperPortfolioStore:
             "stamp_duty_rate": settings["sell_stamp_duty_rate"],
             "commission": commission,
             "stamp_duty": stamp_duty,
+            "transfer_fee_rate": settings.get("transfer_fee_rate", 0.0),
+            "transfer_fee": transfer_fee,
             "note": str(payload.get("note") or "")[:2000],
             "analysis_snapshot": analysis_snapshot,
         }
@@ -283,12 +318,14 @@ class PaperPortfolioStore:
         cursor = connection.execute(
             """INSERT INTO trades (
                 trade_at, symbol, name, action, quantity, price, commission_rate, stamp_duty_rate,
-                commission, stamp_duty, note, analysis_snapshot, status, correction_of, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)""",
+                commission, stamp_duty, transfer_fee_rate, transfer_fee, note, analysis_snapshot,
+                status, correction_of, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)""",
             (
                 prepared["trade_at"], prepared["symbol"], prepared["name"], prepared["action"],
                 prepared["quantity"], prepared["price"], prepared["commission_rate"],
                 prepared["stamp_duty_rate"], prepared["commission"], prepared["stamp_duty"],
+                prepared.get("transfer_fee_rate", 0.0), prepared.get("transfer_fee", 0.0),
                 prepared["note"], json.dumps(prepared["analysis_snapshot"], ensure_ascii=False),
                 correction_of, now,
             ),
