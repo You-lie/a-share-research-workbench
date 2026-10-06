@@ -15,13 +15,17 @@
 
 ![多 Agent 辩论](docs/screenshots/02-agent-debate.png)
 
-### 独立报告页面（深色主题）
+### 智能推演报告（深色主题）
 
-每次分析都可以导出为一份**独立的深色主题报告页面**：包含信号总览、数据溯源、关键指标、三 Agent 辩论、主持人裁决、多周期预测、操作建议、风险提示与 AI 分析详情。下图是实际报告样式（贵州茅台，2026-10-06 数据）：
+开启「智能推演」后，系统会调用多智能体群体模拟，为标的生成一份**独立的深色主题报告页面**：信号总览、估值与建议买点、价格预测区间、多周期预测、评分明细、重要新闻摘要、风险因素，以及完整的 **MiroFish 群体智能推演报告**（模拟核心预测、各智能体行为与决策逻辑、散户辩论、风险控制立场等）。
 
-[![报告示例](docs/screenshots/07-report-sample-dark.png)](docs/report-sample.html)
+演示报告（德业股份 605117，2026-07-19 推演）：
 
-> 上图可直接下载；完整示例页面见 [`docs/report-sample.html`](docs/report-sample.html)（下载到本地用浏览器打开，或直接访问仓库文件页的 Raw 预览）。
+![推演报告总览](docs/screenshots/07-prediction-report-top.png)
+
+![MiroFish 推演报告](docs/screenshots/08-prediction-mirofish-report.png)
+
+> 完整示例页面见 [`docs/report-sample.html`](docs/report-sample.html)：下载到本地用浏览器打开，可看到全部章节与完整推演内容。
 
 ### 数据溯源，口径透明
 行情、财务、新闻每一项都标注**数据来源、抓取时间、报告期和口径**；数据降级、使用备用源或缓存时会明确显示状态，绝不拿模拟数据冒充真实行情。

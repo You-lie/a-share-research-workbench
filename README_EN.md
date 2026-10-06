@@ -15,13 +15,17 @@ Each stock is analyzed independently by technical, fundamental, and sentiment ag
 
 ![Multi-agent debate](docs/screenshots/02-agent-debate.png)
 
-### Standalone report page (dark theme)
+### Smart-simulation report (dark theme)
 
-Every analysis can be exported as a **standalone dark-theme report page**: signal overview, data provenance, key metrics, the three-agent debate, moderator verdict, multi-period forecasts, suggested action, risk notes, and the AI analysis detail. The image below is a real report (Kweichow Moutai, 2026-10-06 data):
+When "smart simulation" is enabled, a multi-agent crowd simulation runs for the target stock and produces a **standalone dark-theme report page**: signal overview, valuation and reference entry, price forecast range, multi-period forecasts, score breakdown, top news, risk factors, and a complete **MiroFish crowd-simulation report** (core forecast, agent behavior and decision logic, retail debate, risk-control stance, and more).
 
-[![Report sample](docs/screenshots/07-report-sample-dark.png)](docs/report-sample.html)
+Sample report (Deye Co. 605117, simulated 2026-07-19):
 
-> Full sample page: [`docs/report-sample.html`](docs/report-sample.html) — download and open it in a browser.
+![Prediction report overview](docs/screenshots/07-prediction-report-top.png)
+
+![MiroFish simulation report](docs/screenshots/08-prediction-mirofish-report.png)
+
+> Full sample page: [`docs/report-sample.html`](docs/report-sample.html) — download and open it in a browser to see every section.
 
 ### Field-level data provenance
 Every quote, financial metric, and news item carries its **source, retrieval time, reporting period, and basis**. Fallback, cached, or degraded data is labeled explicitly — simulated data is never passed off as real quotes.
