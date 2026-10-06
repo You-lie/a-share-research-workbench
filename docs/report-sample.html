@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>观潮 · 单股深度分析报告（示例）</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0b1420; color:#e0e6ed; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif; line-height:1.6; }
+  .container { max-width:1100px; margin:0 auto; padding:28px 22px 60px; }
+  .head { display:flex; align-items:center; gap:12px; padding-bottom:18px; border-bottom:1px solid #1e3a5f; margin-bottom:22px; }
+  .brand { width:36px; height:36px; display:grid; place-items:center; background:#3a2027; border:1px solid #67343c; color:#f26363; border-radius:8px; font-weight:800; font-size:17px; }
+  h1 { font-size:21px; letter-spacing:.5px; }
+  .sub { color:#7f95b0; font-size:12.5px; margin-top:2px; }
+  .demo-note { margin-left:auto; font-size:11px; color:#f2b348; border:1px solid #6a592e; background:#312817; border-radius:6px; padding:5px 10px; white-space:nowrap; }
+  .signal { display:flex; align-items:center; gap:16px; border-radius:10px; padding:16px 20px; margin-bottom:16px; border:1px solid; }
+  .signal.neutral { background:rgba(242,179,72,.08); border-color:#8a6d2f; }
+  .signal.bullish { background:rgba(255,71,87,.10); border-color:#a33; }
+  .signal.bearish { background:rgba(0,212,170,.10); border-color:#1a7a63; }
+  .signal .icon { font-size:26px; }
+  .signal .icon.neutral { color:#f2b348; } .signal .icon.bullish { color:#ff6b7a; } .signal .icon.bearish { color:#44c99a; }
+  .signal-label { font-size:18px; font-weight:700; }
+  .signal-meta { font-size:12px; color:#8aa0bb; margin-top:2px; }
+  .prov-row { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px; }
+  .prov-chip { font-size:11.5px; padding:5px 10px; border-radius:5px; border:1px solid #2d3e54; background:#131f30; color:#a9bdd6; }
+  .prov-chip.ok { border-color:#2f6f57; } .prov-chip.warn { border-color:#8a6d2f; } .prov-chip.bad { border-color:#a33; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; margin-bottom:20px; }
+  .card { background:#131f30; border:1px solid #23344b; border-radius:10px; padding:14px; }
+  .m-label { font-size:11px; color:#7f95b0; text-transform:uppercase; letter-spacing:.4px; margin-bottom:6px; }
+  .m-value { font-size:21px; font-weight:700; }
+  .m-sub { font-size:12px; color:#8aa0bb; margin-top:4px; }
+  .pos { color:#ff6b7a; } .neg { color:#44c99a; } .neu { color:#f2b348; }
+  .section-title { font-size:15px; font-weight:700; color:#8ab4f8; margin:24px 0 10px; padding-bottom:7px; border-bottom:1px solid #1e3a5f; }
+  .agents { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; }
+  .agent-name { font-size:12px; color:#7f95b0; margin-bottom:6px; }
+  .agent-outlook { font-size:17px; font-weight:700; margin-bottom:8px; }
+  .agent-outlook .meta { font-size:11.5px; font-weight:400; color:#8aa0bb; }
+  .bullish { color:#ff6b7a; } .bearish { color:#44c99a; } .neutral { color:#f2b348; }
+  .sub-title { font-size:12px; color:#8ab4f8; margin-top:8px; }
+  .sub-title.risk { color:#ff6b7a; }
+  .pt { font-size:12.5px; color:#c0c8d0; padding:2px 0; }
+  .rk { font-size:12.5px; color:#ff8791; padding:2px 0; }
+  .moderator { margin-top:14px; background:rgba(242,179,72,.06); border:1px solid #8a6d2f; border-radius:10px; padding:16px; }
+  .moderator-head { font-size:15px; font-weight:700; margin-bottom:8px; }
+  .moderator-reason { font-size:13.5px; color:#c8d4e2; margin-bottom:14px; }
+  .periods { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; }
+  .period-cell { background:#0e1928; border-radius:8px; padding:11px; }
+  .period-label { font-size:11px; color:#7f95b0; margin-bottom:4px; }
+  .period-dir { font-size:15.5px; font-weight:700; }
+  .period-reason { font-size:11.5px; color:#8aa0bb; margin-top:5px; }
+  .action-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-top:12px; }
+  .action-cell { background:#0e1928; border-radius:8px; padding:11px; text-align:center; }
+  .action-label { font-size:11px; color:#7f95b0; margin-bottom:4px; }
+  .action-value { font-size:17px; font-weight:700; }
+  .risk-row { display:flex; flex-wrap:wrap; gap:8px; }
+  .risk-tag { font-size:12px; color:#ff8791; background:rgba(255,71,87,.10); border:1px solid #5a2b33; border-radius:6px; padding:6px 12px; }
+  .llm { background:#131f30; border:1px solid #23344b; border-radius:10px; padding:16px; font-size:13.5px; color:#c8d4e2; }
+  .footer { margin-top:28px; padding-top:14px; border-top:1px solid #1e3a5f; color:#7f95b0; font-size:11.5px; text-align:center; }
+  @media (max-width:760px) { .demo-note { display:none; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="head">
+    <div class="brand">潮</div>
+    <div>
+      <h1>观潮 · 单股深度分析报告</h1>
+      <div class="sub">贵州茅台（600519） · 数据日期 2026-10-06 · 仅供研究参考，不构成投资建议</div>
+    </div>
+    <div class="demo-note">静态示例 · 深色主题</div>
+  </div>
+
+  <div class="signal neutral">
+    <span class="icon neutral">◆</span>
+    <div>
+      <div class="signal-label">中性（0.3 / 5）</div>
+      <div class="signal-meta">贵州茅台 | 置信度: 低 | 市场状态: ranging | PE分位: 20.7%</div>
+    </div>
+  </div>
+
+  <div class="prov-row">
+    <span class="prov-chip ok">行情 · 直连 · 腾讯财经</span>
+    <span class="prov-chip ok">财务 · 直连 · AkShare / 东方财富</span>
+    <span class="prov-chip ok">新闻 · 直连 · wap.eastmoney.com / moomoo.com</span>
+  </div>
+
+  <div class="grid">
+    <div class="card"><div class="m-label">当前价格</div><div class="m-value">¥1,258.62</div><div class="m-sub pos">涨跌 +1.86%</div></div>
+    <div class="card"><div class="m-label">PE / PB</div><div class="m-value">19.3 / 6.3</div><div class="m-sub">市值: 15,734亿</div></div>
+    <div class="card"><div class="m-label">当前估值</div><div class="m-value neu">偏低</div><div class="m-sub">估值参考价 ¥1,293.15</div></div>
+    <div class="card"><div class="m-label">ROE / EPS</div><div class="m-value">16.75% / 35.57</div><div class="m-sub">营收 922.8亿 · 净利 445.2亿</div></div>
+  </div>
+
+  <div class="section-title">多 Agent 辩论</div>
+  <div class="agents">
+    <div class="card agent" style="border-left:3px solid #ffa502;">
+      <div class="agent-name">◆ 技术面分析师</div>
+      <div class="agent-outlook neutral">中性 <span class="meta">置信度: 中　评分: +1</span></div>
+      <div class="sub-title">关键论点:</div><div class="pt">+ 现价站上MA5(1245.26)和MA10(1251.48)，短期有企稳反弹迹象</div><div class="pt">+ 今日上涨1.86%，KDJ三线70.32处于偏强区，量比1.24小幅放量，短线动能回暖</div><div class="pt">+ RSI=36.34自低位回升，脱离超卖压力，但仍在50下方，多头力量有限</div>
+      <div class="sub-title risk">风险:</div><div class="rk">- MA5&lt;MA10&lt;MA20&lt;MA60呈空头排列，中期趋势仍偏弱</div><div class="rk">- MACD柱为-4.3975仍处负值区，动能尚未转正</div><div class="rk">- 现价1258.62受制于MA20(1273.42)与MA60(1288.79)压制，若无法有效突破则反弹空间受限</div>
+    </div>
+    <div class="card agent" style="border-left:3px solid #ff4757;">
+      <div class="agent-name">■ 基本面分析师</div>
+      <div class="agent-outlook bullish">看多 <span class="meta">置信度: 中　评分: +3</span></div>
+      <div class="sub-title">关键论点:</div><div class="pt">+ PE=19.32，处于历史20.7%分位，低于历史中位数，估值偏低</div><div class="pt">+ ROE=16.75%，高于15%，盈利能力较强</div><div class="pt">+ 毛利率89.56%、负债率15.19%，财务结构稳健</div><div class="pt">+ 经营现金流约706.91亿，自由现金流约706.91亿，现金创造能力突出</div>
+      <div class="sub-title risk">风险:</div><div class="rk">- 缺少营收、净利及EPS同比增速数据，成长性无法验证</div><div class="rk">- 估值判断基于盈利水平不变的静态假设，若盈利下滑则低PE可能失真</div><div class="rk">- 股息率缺失，股东回报水平不明确</div><div class="rk">- 行业景气与市场情绪未纳入，估值修复节奏存在不确定性</div>
+    </div>
+    <div class="card agent" style="border-left:3px solid #ffa502;">
+      <div class="agent-name">● 舆情分析师</div>
+      <div class="agent-outlook neutral">中性 <span class="meta">置信度: 低　评分: +0</span></div>
+      <div class="sub-title">关键论点:</div><div class="pt">+ 新闻3条均为中性，正面0条、负面0条，情感均值0.00</div><div class="pt">+ 股吧80条中正面11条、负面6条，情感均值0.03，略偏多但信号较弱</div><div class="pt">+ 正面占比13.75%，未超过50%，未触发加分规则</div><div class="pt">+ 负面帖提及下跌趋势、抱团瓦解等谨慎观点，但整体未形成一致看空</div>
+      <div class="sub-title risk">风险:</div><div class="rk">- 整体情感均值接近0，方向性不强</div><div class="rk">- 股吧正面占比偏低，乐观情绪不充分</div><div class="rk">- 负面言论虽少但涉及持续下跌和抱团瓦解，可能压制情绪</div><div class="rk">- 样本以股吧散户情绪为主，代表性有限</div>
+    </div>
+  </div>
+
+  <div class="moderator">
+    <div class="moderator-head">◆ 主持人综合裁决 — 最终判断: <span class="neutral">中性</span>　置信度: 中</div>
+    <div class="moderator-reason">估值低+基本面强构成中期支撑，但技术空头排列、舆情无方向，反弹受MA20/MA60压制，需放量突破确认。</div>
+    <div class="periods"><div class="period-cell">
+      <div class="period-label">短期 (1~2周)</div>
+      <div class="period-dir neutral">震荡 +1.5%</div>
+      <div class="period-reason">站上MA5/MA10企稳，KDJ偏强；但受阻MA20/MA60，量能不足难突破。</div>
+    </div><div class="period-cell">
+      <div class="period-label">中期 (1~3月)</div>
+      <div class="period-dir bullish">上涨 +6.0%</div>
+      <div class="period-reason">PE处20.7%低分位，估值修复空间存在，但需盈利增速验证。</div>
+    </div><div class="period-cell">
+      <div class="period-label">长期 (6~12月)</div>
+      <div class="period-dir bullish">上涨 +12.0%</div>
+      <div class="period-reason">高ROE、89%毛利率、充沛现金流及龙头地位支撑长期价值。</div>
+    </div></div>
+    <div class="action-row">
+      <div class="action-cell"><div class="action-label">操作建议</div><div class="action-value neutral">观望</div></div>
+      <div class="action-cell"><div class="action-label">止损价</div><div class="action-value neu">-</div></div>
+      <div class="action-cell"><div class="action-label">止盈价</div><div class="action-value neu">-</div></div>
+    </div>
+  </div>
+
+  <div class="section-title">风险提示</div>
+  <div class="risk-row"><span class="risk-tag">成长性数据缺失，盈利若下滑低PE可能失真</span><span class="risk-tag">技术面空头排列，MACD负值动能未转正</span><span class="risk-tag">机构抱团松动、散户情绪偏谨慎</span></div>
+
+  <div class="section-title">AI 分析详情</div>
+  <div class="llm">三方共识：估值处历史低位、财务稳健、短期有企稳迹象，但均未给出强看多信号。分歧：基本面看多（PE分位20.7%、ROE16.75%）与技术面中性（MA5&lt;MA10&lt;MA20&lt;MA60空头排列、MACD负值）相矛盾；舆情方向不明。裁决：低估值提供安全边际，但技术反转未确认、情绪无方向，综合判断中性偏多。短期受MA20/MA60压制以震荡为主，中期靠估值回归，长期由基本面支撑。</div>
+
+  <div class="footer">本报告由观潮（Guanchao）生成 · 静态示例页面 · 内容仅供研究参考，不构成投资建议；市场有风险，投资需谨慎。</div>
+</div>
+</body>
+</html>

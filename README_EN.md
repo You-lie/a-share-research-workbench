@@ -15,6 +15,14 @@ Each stock is analyzed independently by technical, fundamental, and sentiment ag
 
 ![Multi-agent debate](docs/screenshots/02-agent-debate.png)
 
+### Standalone report page (dark theme)
+
+Every analysis can be exported as a **standalone dark-theme report page**: signal overview, data provenance, key metrics, the three-agent debate, moderator verdict, multi-period forecasts, suggested action, risk notes, and the AI analysis detail. The image below is a real report (Kweichow Moutai, 2026-10-06 data):
+
+[![Report sample](docs/screenshots/07-report-sample-dark.png)](docs/report-sample.html)
+
+> Full sample page: [`docs/report-sample.html`](docs/report-sample.html) — download and open it in a browser.
+
 ### Field-level data provenance
 Every quote, financial metric, and news item carries its **source, retrieval time, reporting period, and basis**. Fallback, cached, or degraded data is labeled explicitly — simulated data is never passed off as real quotes.
 
