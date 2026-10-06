@@ -439,9 +439,13 @@ class BaoStockBackend(BaseStockBackend):
             self._login()
             prefix = self._bs_prefix(symbol)
             code = symbol.strip().zfill(6)
-            # 日K线最新一条作为行情
+            # 日K线：字段顺序 date,open,high,low,close,volume,amount,peTTM,pbMRQ,turn
+            # 取最近一个月即可拿到最新一条 + 上一交易日收盘，无需全量历史。
+            end = datetime.now()
+            start = end - timedelta(days=30)
             rs = self._bs.query_history_k_data_plus(prefix,
                 'date,open,high,low,close,volume,amount,peTTM,pbMRQ,turn',
+                start_date=start.strftime('%Y-%m-%d'), end_date=end.strftime('%Y-%m-%d'),
                 frequency='d', adjustflag='2')
             rows = []
             while rs.next():
@@ -449,8 +453,8 @@ class BaoStockBackend(BaseStockBackend):
             if not rows:
                 return None
             r = rows[-1]
-            price = float(r[3]) if r[3] else 0
-            prev_close = float(r[3]) if len(rows) > 1 and rows[-2][3] else price
+            price = float(r[4]) if r[4] else 0
+            prev_close = float(rows[-2][4]) if len(rows) > 1 and rows[-2][4] else price
             change_pct = (price - prev_close) / prev_close * 100 if prev_close else 0
 
             # 股票名称
@@ -463,16 +467,16 @@ class BaoStockBackend(BaseStockBackend):
             except Exception:
                 pass
 
-            pe = float(r[6]) if r[6] else None
-            pb = float(r[7]) if r[7] else None
-            turnover = float(r[8]) if r[8] else None
+            pe = float(r[7]) if r[7] else None
+            pb = float(r[8]) if r[8] else None
+            turnover = float(r[9]) if r[9] else None
 
             return Quote(
                 symbol=code, name=name, price=round(price, 2),
                 change=round(price - prev_close, 2), change_pct=round(change_pct, 2),
-                volume=float(r[4]) if r[4] else 0, amount=float(r[5]) if r[5] else 0,
-                high=float(r[1]) if r[1] else 0, low=float(r[2]) if r[2] else 0,
-                open_=float(r[0]) if r[0] else 0, prev_close=round(prev_close, 2),
+                volume=float(r[5]) if r[5] else 0, amount=float(r[6]) if r[6] else 0,
+                high=float(r[2]) if r[2] else 0, low=float(r[3]) if r[3] else 0,
+                open_=float(r[1]) if r[1] else 0, prev_close=round(prev_close, 2),
                 turnover_rate=round(turnover, 2) if turnover else None,
                 pe=round(pe, 2) if pe else None, pb=round(pb, 2) if pb else None,
                 market_cap=None, timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),

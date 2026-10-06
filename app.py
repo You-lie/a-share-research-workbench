@@ -158,6 +158,30 @@ qlib_train_tasks = {}
 _qlib_train_lock = threading.Lock()
 qlib_finetune_tasks = {}
 _qlib_finetune_lock = threading.Lock()
+
+# Finished tasks are kept for status polling, but the dicts must not grow
+# without bound during long-running sessions. Keep only the newest N terminal
+# tasks per group; anything still pending/running is always preserved.
+_TASK_HISTORY_LIMIT = 60
+
+
+def _prune_tasks_locked(tasks: dict) -> None:
+    """Drop the oldest finished tasks once a group exceeds the history limit.
+
+    Caller must already hold the group's lock (the update functions do).
+    """
+    if len(tasks) <= _TASK_HISTORY_LIMIT:
+        return
+    terminal = {'completed', 'failed', 'cancelled'}
+    finished = [
+        (task_id, task) for task_id, task in tasks.items()
+        if task.get('status') in terminal
+    ]
+    excess = len(tasks) - _TASK_HISTORY_LIMIT
+    finished.sort(key=lambda item: str(item[1].get('completed_at') or ''))
+    for task_id, _ in finished[:excess]:
+        tasks.pop(task_id, None)
+
 _paper_portfolio_store = None
 _paper_portfolio_lock = threading.Lock()
 _paper_quote_cache = {}
@@ -874,6 +898,20 @@ def batch_analyze():
     while len(shares_list) < len(symbols):
         shares_list.append(0)
 
+    # 去重：同一代码只分析一次，保留首次出现的成本/持仓（避免浪费额度与并发写同一文件）
+    seen_symbols = set()
+    unique_symbols, unique_costs, unique_shares = [], [], []
+    for i, sym in enumerate(symbols):
+        if sym in seen_symbols:
+            continue
+        seen_symbols.add(sym)
+        unique_symbols.append(sym)
+        unique_costs.append(cost_prices[i] if i < len(cost_prices) else 0.0)
+        unique_shares.append(shares_list[i] if i < len(shares_list) else 0)
+    if len(unique_symbols) < len(symbols):
+        logger.info(f"批量输入去重: {len(symbols)} -> {len(unique_symbols)} 只")
+    symbols, cost_prices, shares_list = unique_symbols, unique_costs, unique_shares
+
     task_id = f"batch_{uuid.uuid4().hex[:12]}"
 
     task_data = {
@@ -1082,6 +1120,7 @@ def _update_batch(task_id, progress, status, message, **kwargs):
             bt[k] = v
         if status in ('completed', 'failed', 'cancelled'):
             bt['completed_at'] = datetime.now().isoformat()
+            _prune_tasks_locked(batch_tasks)
 
 
 def _update_analysis(task_id, progress, status, message, **kwargs):
@@ -1100,6 +1139,7 @@ def _update_analysis(task_id, progress, status, message, **kwargs):
             task[key] = value
         if status in ('completed', 'failed', 'cancelled'):
             task['completed_at'] = datetime.now().isoformat()
+            _prune_tasks_locked(analysis_tasks)
 
 
 def _update_qlib(task_id, progress, status, message, **kwargs):
@@ -1116,6 +1156,7 @@ def _update_qlib(task_id, progress, status, message, **kwargs):
             qt[k] = v
         if status in ('completed', 'failed'):
             qt['completed_at'] = datetime.now().isoformat()
+            _prune_tasks_locked(qlib_tasks)
 
 
 # ==========================================
@@ -2471,6 +2512,7 @@ def _update_prediction(task_id, progress, status, message, **kwargs):
             pred[k] = v
         if status in ('completed', 'failed', 'cancelled'):
             pred['completed_at'] = datetime.now().isoformat()
+            _prune_tasks_locked(predictions)
 
 
 # ==========================================

@@ -252,7 +252,9 @@ class PredictionNode:
     def _multi_agent_predict(self, state: dict) -> PredictionResult:
         """3 Agent 并行分析 → Moderator 综合裁决"""
         from openai import OpenAI
-        client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+        # 单次调用超时上限，避免挂起的请求把批量任务拖死
+        client = OpenAI(api_key=self.api_key, base_url=self.base_url,
+                        timeout=60, max_retries=1)
 
         # 并行调用 3 个 Agent
         agents = {

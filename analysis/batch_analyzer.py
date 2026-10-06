@@ -197,13 +197,17 @@ class BatchAnalyzer:
         def _cancelled_result() -> Dict:
             if progress_callback:
                 progress_callback('cancelled', {'message': '用户已停止批量分析'})
+            done = list(results_by_index.values())
+            success = sum(1 for item in done if item.get('status') == 'complete')
+            errors = sum(1 for item in done if item.get('status') == 'error')
             return {
                 'task_id': task_id,
                 'symbols': symbols,
                 'total': total,
-                'success_count': len(all_results),
-                'error_count': 0,
-                'results': all_results,
+                'success_count': success,
+                'error_count': errors,
+                'completed_count': len(done),
+                'results': done,
                 'summary': None,
                 'quality_pick': None,
                 'status': 'cancelled',
@@ -646,24 +650,29 @@ class BatchAnalyzer:
         for i, r in enumerate(results):
             d = r['data']
             score_bd = d.get('score_breakdown', {}) or {}
-            final_score = score_bd.get('final', 0) or 0
+            final_score = score_bd.get('final')
+            if not isinstance(final_score, (int, float)):
+                final_score = None
             vp = d.get('valuation_percentile')
             vp_str = f"{vp:.1f}" if vp is not None else "N/A"
+            score_text = f"{final_score:+.1f}" if final_score is not None else "N/A"
             ranking.append({
                 'symbol': r['symbol'],
                 'rank': i + 1,
                 'name': d.get('stock_name', ''),
                 'score': final_score,
-                'reason': f"综合评分 {final_score:+.1f}，估值分位 {vp_str}%",
+                'reason': f"综合评分 {score_text}，估值分位 {vp_str}%",
             })
 
-        # 按评分排序
-        ranking.sort(key=lambda x: x['score'], reverse=True)
+        # 按评分排序；缺失评分的排在最后（None 不参与数值比较）
+        ranking.sort(key=lambda x: (x['score'] is None, -(x['score'] or 0)))
         for i, item in enumerate(ranking):
             item['rank'] = i + 1
 
+        top_score = next((item['score'] for item in ranking if item['score'] is not None), None)
+        top_text = f"{top_score:+.1f}" if top_score is not None else "N/A"
         return {
-            'summary_text': f"(规则降级) 基于综合评分的简单排序。共{len(results)}只股票，最高评分: {ranking[0]['score'] if ranking else 'N/A'}。",
+            'summary_text': f"(规则降级) 基于综合评分的简单排序。共{len(results)}只股票，最高评分: {top_text}。",
             'ranking': ranking,
             'common_themes': [],
             'key_divergences': [],
@@ -681,7 +690,10 @@ class BatchAnalyzer:
             d = r['data']
             score_bd = d.get('score_breakdown', {}) or {}
             val_pct = d.get('valuation_percentile')
-            final_score = score_bd.get('final', 0) or 0
+            final_score = score_bd.get('final')
+            if not isinstance(final_score, (int, float)):
+                # 缺失评分不允许当作 0 分参与排序，直接排除在候选之外
+                continue
             # Missing PE data must not be silently treated as a normal 50% percentile.
             composite = final_score * 1.5
             if val_pct is not None:
@@ -689,6 +701,14 @@ class BatchAnalyzer:
             scored.append((composite, r))
 
         scored.sort(key=lambda x: x[0], reverse=True)
+
+        if not scored:
+            # 所有股票都缺评分：不强行排序，明确返回无候选。
+            return {
+                'best_stock': None,
+                'runner_up': None,
+                'selection_rationale': '(规则降级) 所有股票均缺少可用综合评分，未提供研究候选。',
+            }
 
         best = scored[0][1]
         best_d = best['data']
